@@ -1,0 +1,10 @@
+/library/
+/local/
+/temp/
+/build/
+/profiles/
+/.test-build/
+/.creator/
+/tmp/
+.resized.png
+*.log

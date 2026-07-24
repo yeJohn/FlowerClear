@@ -1,0 +1,12 @@
+{
+  "name": "botanical-vase-transfer",
+  "uuid": "91bb2ddb-3997-4fef-b038-d9d9b49dc32d",
+  "version": "3.0.0",
+  "creator": {
+    "version": "3.8.6"
+  },
+  "description": "Botanical Vases - multi-vase flower transfer puzzle",
+  "scripts": {
+    "test:domain": "node tests/domain-runner.cjs"
+  }
+}

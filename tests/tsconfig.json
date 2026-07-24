@@ -1,0 +1,1 @@
+{"compilerOptions":{"target":"ES2020","module":"CommonJS","moduleResolution":"node","strict":true,"esModuleInterop":true,"rootDir":"..","outDir":"../.test-build","skipLibCheck":true},"include":["../assets/scripts/config/GameData.ts","../assets/scripts/domain/Types.ts","../assets/scripts/domain/ArrangementModel.ts","../assets/scripts/services/SaveService.ts"]}

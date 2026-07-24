@@ -1,0 +1,35 @@
+const assert=require('node:assert/strict');
+const{LEVELS}=require('../.test-build/assets/scripts/config/GameData.js');
+const{ArrangementModel}=require('../.test-build/assets/scripts/domain/ArrangementModel.js');
+const{SaveService}=require('../.test-build/assets/scripts/services/SaveService.js');
+assert.equal(LEVELS.length,60);
+const gates=Array.from({length:60},(_,i)=>SaveService.requiredStars(i+1));assert.equal(gates[0],0);assert.deepEqual(gates.slice(0,10),[0,2,4,6,9,11,13,16,18,21]);assert.ok(gates.every((n,i)=>i===0||n>=gates[i-1]));assert.ok(gates.slice(1).some(n=>n%10!==0));
+for(const level of LEVELS){
+  const model=new ArrangementModel(level);let guard=0;
+  if(level.id>1)assert.ok(model.state.vases.every(v=>v.layers.every(layer=>layer.length!==3||!layer.every(f=>f===layer[0]))),`level ${level.id} must not preload a completed triple in any layer`);
+  while(model.state.status==='playing'&&guard++<500){
+    let target=model.state.vases.find(v=>{const a=model.visible(v.id),available=model.state.vases.reduce((n,s)=>n+(s.id===v.id?0:model.visible(s.id).filter(f=>f===a[0]).length),0);return model.canReceive(v.id)&&a.length>0&&a.length<3&&a.every(f=>f===a[0])&&available>=3-a.length;});
+    let flowerId=target?model.visible(target.id)[0]:undefined;
+    if(!target){
+      target=model.state.vases.find(v=>model.canReceive(v.id)&&model.visible(v.id).length===0);
+      if(!target){model.shuffleVisible();continue;}
+      const groups=new Map();for(const vase of model.state.vases)model.visible(vase.id).forEach(f=>groups.set(f,(groups.get(f)||0)+1));
+      flowerId=[...groups.entries()].find(([,count])=>count>=3)?.[0];if(!flowerId){const locked=model.state.vases.find(v=>v.lock&&!v.lock.unlocked);if(locked)assert.equal(model.unlockByVideo(locked.id),true);else model.shuffleVisible();continue;}
+    }
+    let completed=false;while(!completed&&model.visible(target.id).length<3){
+      const source=model.state.vases.find(v=>v.id!==target.id&&model.visible(v.id).includes(flowerId));assert.ok(source,`level ${level.id} missing source flower`);
+      const slot=model.visible(source.id).indexOf(flowerId),result=model.move(source.id,slot,target.id);assert.equal(result.accepted,true);completed=result.eliminated.length>0;
+    }
+  }
+  if(model.state.status==='won')assert.ok(model.state.vases.every(v=>v.layers.length===0));else{const counts=new Map();for(const v of model.state.vases)for(const layer of v.layers)for(const f of layer)counts.set(f,(counts.get(f)||0)+1);assert.ok([...counts.values()].every(n=>n%3===0),`level ${level.id} must keep every flower count divisible by three`);}
+}
+const timer=new ArrangementModel(LEVELS[0]);timer.tick(999);assert.equal(timer.state.status,'failed');timer.revive();assert.equal(timer.state.status,'playing');
+const withEmpty=new ArrangementModel(LEVELS[0]);assert.equal(withEmpty.visible('vase_2').length,0);assert.equal(withEmpty.hasUsefulMove(),true,'an empty vase must prevent a false deadlock');
+const partialTargets=new ArrangementModel(LEVELS[2]);partialTargets.state.vases.forEach((v,i)=>{v.lock=undefined;v.layers=[[i===0?'rose':i===1?'tulip':'daisy',i===1?'sunflower':'iris',i===1?'peony':'lily']];});partialTargets.state.vases[0].layers=[['rose']];assert.equal(partialTargets.hasUsefulMove(),true,'a partial vase must accept a flower even when it is not an immediate match');
+const movableButHopeless=new ArrangementModel(LEVELS[2]);movableButHopeless.state.vases.forEach((v,i)=>{v.layers=i===0?[['rose']]:i===1?[['tulip']]:[];v.lock=i<2?undefined:{type:'video',required:0,unlocked:false};});assert.equal(movableButHopeless.hasUsefulMove(),false,'legal shuffling without any reachable triple must still be a deadlock');
+const locked=new ArrangementModel(LEVELS[15]),videoLock=locked.state.vases.find(v=>v.lock?.type==='video');assert.ok(videoLock);assert.equal(locked.visible(videoLock.id).length,0);assert.equal(locked.unlockByVideo(videoLock.id),true);
+const chain=new ArrangementModel(LEVELS[0]);chain.state.vases[0].layers=[['rose','rose','rose'],['daisy','daisy']];chain.state.vases[1].layers=[['daisy']];chain.state.vases[2].layers=[];const chainResult=chain.move('vase_1',0,'vase_0');assert.equal(chainResult.eliminated.length,3);assert.deepEqual(chain.visible('vase_0'),['rose','rose','rose']);assert.equal(chain.state.status,'playing');
+const deadlock=new ArrangementModel(LEVELS[2]);deadlock.state.vases.forEach((v,i)=>{v.lock=undefined;const layer=[['rose','tulip','daisy'],['sunflower','peony','iris'],['camellia','lily','freesia']][i%3];v.layers=[layer.slice(),layer.slice()];});assert.equal(deadlock.hasUsefulMove(),false);const beforeShuffleCount=deadlock.state.vases.flatMap(v=>v.layers.flat()).length,beforeShuffleEliminated=deadlock.state.eliminatedGroups;assert.equal(deadlock.shuffleVisible(),true);assert.equal(deadlock.state.eliminatedGroups,beforeShuffleEliminated);assert.equal(deadlock.state.vases.flatMap(v=>v.layers.flat()).length,beforeShuffleCount);assert.ok(deadlock.state.vases.every(v=>v.layers.length>0),'shuffle must not create an empty vase');const firstVisible=new Map();for(const vase of deadlock.state.vases)for(const flower of deadlock.visible(vase.id))firstVisible.set(flower,(firstVisible.get(flower)||0)+1);assert.ok([...firstVisible.values()].some(count=>count>=3),'shuffle should expose a playable triple');assert.ok(deadlock.state.vases.some(v=>deadlock.visible(v.id).length>1),'shuffle should retain mixed two-or-three-flower top layers');assert.ok(deadlock.state.vases.every(v=>v.layers.length<2||!v.layers[v.layers.length-2].some(flower=>v.layers[v.layers.length-1].includes(flower))),'visible and ghost layers should not show the same flower');
+const singletonFlowers=new Map();let singletonVases=0,partialVases=0;for(const vase of deadlock.state.vases){const top=deadlock.visible(vase.id);if(top.length<3)partialVases++;if(top.length===1){singletonVases++;singletonFlowers.set(top[0],(singletonFlowers.get(top[0])||0)+1);}}assert.ok(singletonVases<=2,'shuffle should keep at most two single-flower vases');assert.ok(partialVases<=2,'shuffle should keep only two partially filled operation vases');assert.ok([...singletonFlowers.values()].every(count=>count<3),'shuffle must not expose an obvious three-single-flower answer');
+for(const level of LEVELS){const model=new ArrangementModel(level),before=model.state.vases.flatMap(v=>v.layers.flat()).length;model.shuffleVisible();const after=model.state.vases.flatMap(v=>v.layers.flat()).length;assert.equal(after,before,`level ${level.id} shuffle must preserve flower count`);model.props.magic++;assert.doesNotThrow(()=>model.useMagic(),`level ${level.id} magic must remain usable after shuffle`);}
+Promise.all([withEmpty.hasUsefulMoveAsync(),movableButHopeless.hasUsefulMoveAsync()]).then(([playable,stuck])=>{assert.equal(playable,true);assert.equal(stuck,false);console.log('PASS: 60 progressive layered levels, async deadlock recovery, triple-chain elimination and locked vases verified');}).catch(error=>{console.error(error);process.exitCode=1;});
