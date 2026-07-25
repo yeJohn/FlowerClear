@@ -11,7 +11,6 @@ export class ArrangementModel {
     readonly state: TransferState;
     readonly props: Record<PropType, number>;
     private history: TransferSnapshot[] = [];
-    private shuffleRecoveryActive=false;
     constructor(readonly level: TransferLevel) { this.props = { ...level.props }; this.state = { levelId: level.id, vases: this.buildVases(), remainingTime: level.timeLimit, score: 0, eliminatedGroups: 0, combo: 0, status: 'playing', moves: 0, lastEliminateAt: -99 }; }
     tick(dt: number) { if (this.state.status !== 'playing')
         return; this.state.remainingTime = Math.max(0, this.state.remainingTime - dt); if (!this.state.remainingTime)
@@ -30,7 +29,7 @@ export class ArrangementModel {
         source.layers.pop(); let receiving = target.layers[target.layers.length - 1]; if (!receiving) {
         receiving = [];
         target.layers.push(receiving);
-    } const filled = receiving!; filled.push(flower); this.state.moves++; const eliminated=this.resolveMatches(targetId);if(this.shuffleRecoveryActive&&eliminated.length){this.softenSingletonTriples();this.densifyShuffleTop();} if (this.state.vases.every(v => !v.layers.length))
+    } const filled = receiving!; filled.push(flower); this.state.moves++; const eliminated=this.resolveMatches(targetId);if(this.state.vases.every(v => !v.layers.length))
         this.state.status = 'won'; return this.result(true, eliminated); }
     useHourglass() { if (!this.consume('hourglass'))
         return false; this.state.remainingTime += 60; return true; }
@@ -62,12 +61,24 @@ export class ArrangementModel {
         for (const v of this.state.vases) {
             this.visible(v.id).forEach((f, i) => { const a = seen.get(f) || []; a.push({ vaseId: v.id, slotIndex: i }); seen.set(f, a); });
         }
-        const triple = [...seen.values()].find(a => a.length >= 3);
+        const triple = Array.from(seen.values()).find(a => a.length >= 3);
         if (triple)
             return { sourceId: triple[0].vaseId, slotIndex: triple[0].slotIndex, targetId: empty.id };
     } return null; }
     hasUsefulMove(){const active=this.state.vases.filter(v=>!this.isLocked(v)),initial=active.map(v=>v.layers.map(layer=>layer.slice())),encode=(state:string[][][])=>state.map(layers=>layers.map(layer=>layer.join(',')).join('/')).join('|'),queue:{state:string[][][];depth:number}[]=[{state:initial,depth:0}],seen=new Set<string>([encode(initial)]),deadline=Date.now()+8;let cursor=0,checked=0;while(cursor<queue.length&&checked++<6000){if((checked&31)===0&&Date.now()>deadline)return true;const{state,depth}=queue[cursor++];for(const layers of state){const top=layers[layers.length-1];if(top?.length===3&&top.every(f=>f===top[0]))return true;}if(depth>=9)continue;for(let sourceIndex=0;sourceIndex<state.length;sourceIndex++){const sourceTop=state[sourceIndex][state[sourceIndex].length-1];if(!sourceTop?.length)continue;for(let slot=0;slot<sourceTop.length;slot++)for(let targetIndex=0;targetIndex<state.length;targetIndex++){if(sourceIndex===targetIndex)continue;const targetTop=state[targetIndex][state[targetIndex].length-1];if((targetTop?.length||0)>=3)continue;const next=state.map(layers=>layers.map(layer=>layer.slice())),source=next[sourceIndex][next[sourceIndex].length-1],flower=source.splice(slot,1)[0];if(!source.length)next[sourceIndex].pop();let target=next[targetIndex][next[targetIndex].length-1];if(!target){target=[];next[targetIndex].push(target);}target.push(flower);if(target.length===3&&target.every(f=>f===target[0]))return true;const key=encode(next);if(!seen.has(key)){seen.add(key);queue.push({state:next,depth:depth+1});}}}}return false;}
     async hasUsefulMoveAsync(cancelled:()=>boolean=()=>false){const active=this.state.vases.filter(v=>!this.isLocked(v));if(!active.some(v=>(v.layers[v.layers.length-1]?.length||0)<3))return false;const initial=active.map(v=>v.layers.map(layer=>layer.slice())),encode=(state:string[][][])=>state.map(layers=>layers.map(layer=>layer.join(',')).join('/')).join('|'),queue:{state:string[][][];depth:number}[]=[{state:initial,depth:0}],seen=new Set<string>([encode(initial)]);let cursor=0,checked=0;while(cursor<queue.length&&checked++<1600){if(cancelled())return true;if((checked%20)===0)await new Promise<void>(resolve=>setTimeout(resolve,0));const{state,depth}=queue[cursor++];for(const layers of state){const top=layers[layers.length-1];if(top?.length===3&&top.every(f=>f===top[0]))return true;}if(depth>=7)continue;for(let sourceIndex=0;sourceIndex<state.length;sourceIndex++){const sourceTop=state[sourceIndex][state[sourceIndex].length-1];if(!sourceTop?.length)continue;for(let slot=0;slot<sourceTop.length;slot++)for(let targetIndex=0;targetIndex<state.length;targetIndex++){if(sourceIndex===targetIndex)continue;const targetTop=state[targetIndex][state[targetIndex].length-1];if((targetTop?.length||0)>=3)continue;const next=state.map(layers=>layers.map(layer=>layer.slice())),source=next[sourceIndex][next[sourceIndex].length-1],flower=source.splice(slot,1)[0];if(!source.length)next[sourceIndex].pop();let target=next[targetIndex][next[targetIndex].length-1];if(!target){target=[];next[targetIndex].push(target);}target.push(flower);if(target.length===3&&target.every(f=>f===target[0]))return true;const key=encode(next);if(!seen.has(key)){seen.add(key);queue.push({state:next,depth:depth+1});}}}}return false;}
+    shuffleAll(){
+        if(this.state.status!=='playing')return false;
+        const slots:{layer:string[];index:number}[]=[];
+        for(const vase of this.state.vases)if(!this.isLocked(vase))for(const layer of vase.layers)for(let index=0;index<layer.length;index++)slots.push({layer,index});
+        if(slots.length<2)return false;
+        const before=slots.map(slot=>slot.layer[slot.index]),shuffled=before.slice(),rng=new Random(this.level.seed+this.state.moves*97+this.state.eliminatedGroups*991);
+        for(let attempt=0;attempt<8;attempt++){rng.shuffle(shuffled);if(shuffled.some((flower,index)=>flower!==before[index]))break;}
+        this.snapshot();
+        slots.forEach((slot,index)=>slot.layer[slot.index]=shuffled[index]);
+        this.state.moves++;
+        return true;
+    }
     shuffleVisible(){
         if(this.state.status!=='playing')return false;
         const unlocked=this.state.vases.filter(v=>!this.isLocked(v)),flowers:string[]=[];
@@ -86,7 +97,7 @@ export class ArrangementModel {
         for(let empty=0;empty<planned.length;empty++){if(planned[empty].length)continue;const donor=planned.findIndex(layers=>layers.length>1);if(donor>=0)planned[empty].push(planned[donor].shift()!);}
         const topOwners=new Map<string,number[]>();
         for(let i=0;i<planned.length;i++){const top=planned[i][planned[i].length-1];if(top?.length===1){const owners=topOwners.get(top[0])||[];owners.push(i);topOwners.set(top[0],owners);}}
-        const protectedList=((([...topOwners.values()].find(indices=>indices.length>=3))||[]).slice(0,3)),protectedVases=new Set(protectedList),singleAnchor=protectedList[0]??-1;
+        const protectedList=(((Array.from(topOwners.values()).find(indices=>indices.length>=3))||[]).slice(0,3)),protectedVases=new Set(protectedList),singleAnchor=protectedList[0]??-1;
         for(let i=0;i<planned.length;i++){
             if(i===singleAnchor)continue;
             const targetSize=protectedVases.has(i)?2:(i%3===0?3:2),layers=planned[i];
@@ -99,17 +110,17 @@ export class ArrangementModel {
         }
         const newEmpty=planned.filter(layers=>!layers.length).length,total=planned.reduce((sum,layers)=>sum+layers.reduce((n,layer)=>n+layer.length,0),0);
         if(newEmpty>originalEmpty||total!==flowers.length)return false;
-        const previousLayers=unlocked.map(vase=>vase.layers.map(layer=>layer.slice())),previousMoves=this.state.moves,previousRecovery=this.shuffleRecoveryActive,previousHistory=this.history.slice();
+        const previousLayers=unlocked.map(vase=>vase.layers.map(layer=>layer.slice())),previousMoves=this.state.moves,previousHistory=this.history.slice();
         try{
             this.snapshot();
             for(let i=0;i<unlocked.length;i++)unlocked[i].layers=planned[i].map(layer=>layer.slice());
             this.softenSingletonTriples();this.densifyShuffleTop();
             const shuffledTotal=unlocked.reduce((sum,vase)=>sum+vase.layers.reduce((n,layer)=>n+layer.length,0),0);
             if(shuffledTotal!==flowers.length)throw new Error('打乱后的花朵数量不一致');
-            this.state.moves++;this.shuffleRecoveryActive=true;return true;
+            this.state.moves++;return true;
         }catch(error){
             for(let i=0;i<unlocked.length;i++)unlocked[i].layers=previousLayers[i];
-            this.state.moves=previousMoves;this.shuffleRecoveryActive=previousRecovery;this.history=previousHistory;
+            this.state.moves=previousMoves;this.history=previousHistory;
             console.error('[打乱失败] 已恢复打乱前状态',error);return false;
         }
     }
@@ -125,7 +136,7 @@ export class ArrangementModel {
         for(let pass=0;pass<this.state.vases.length*3;pass++){
             const singles=new Map<string,VaseStack[]>();
             for(const vase of this.state.vases){if(this.isLocked(vase))continue;const top=vase.layers[vase.layers.length-1];if(top?.length===1){const owners=singles.get(top[0])||[];owners.push(vase);singles.set(top[0],owners);}}
-            const allSingles=[...singles.values()].reduce((all,owners)=>all.concat(owners),[] as VaseStack[]),obvious=[...singles.entries()].find(([,owners])=>owners.length>=3);
+            const allSingles=Array.from(singles.values()).reduce((all,owners)=>all.concat(owners),[] as VaseStack[]),obvious=Array.from(singles.entries()).find(([,owners])=>owners.length>=3);
             if(!obvious&&allSingles.length<=2)return;
             const targets=obvious?obvious[1].slice(1):allSingles.slice(2);let changed=false;
             for(const target of targets){if(!target?.layers?.length)continue;const flower=target.layers[target.layers.length-1]?.[0];if(flower&&mix(target,flower))changed=true;}
@@ -148,7 +159,7 @@ export class ArrangementModel {
         v: VaseStack;
         i: number;
     }[]>(); for (const v of this.state.vases)
-        this.visible(v.id).forEach((f, i) => { const a = found.get(f) || []; a.push({ v, i }); found.set(f, a); }); const group = [...found.values()].find(a => a.length >= 3); if (!group) {
+        this.visible(v.id).forEach((f, i) => { const a = found.get(f) || []; a.push({ v, i }); found.set(f, a); }); const group = Array.from(found.values()).find(a => a.length >= 3); if (!group) {
         this.props.magic++;
         return [];
     } this.snapshot(); const chosen = group.slice(0, 3).sort((a, b) => a.v === b.v ? b.i - a.i : 0), removed: string[] = []; for (const x of chosen) {
@@ -158,6 +169,19 @@ export class ArrangementModel {
             x.v.layers.pop();
     } this.award();if(this.state.vases.every(v => !v.layers.length))
         this.state.status = 'won'; return removed; }
+    useMagicAll(){
+        if(!this.consume('magic'))return[];
+        const found=new Map<string,{v:VaseStack;layer:string[];index:number}[]>();
+        for(const v of this.state.vases)if(!this.isLocked(v))for(const layer of v.layers)layer.forEach((flower,index)=>{const entries=found.get(flower)||[];entries.push({v,layer,index});found.set(flower,entries);});
+        const group=Array.from(found.values()).find(entries=>entries.length>=3);
+        if(!group){this.props.magic++;return[];}
+        this.snapshot();
+        const chosen=group.slice(0,3).sort((a,b)=>a.layer===b.layer?b.index-a.index:0),removed:string[]=[];
+        for(const item of chosen){removed.push(item.layer.splice(item.index,1)[0]);if(!item.layer.length)item.v.layers.splice(item.v.layers.indexOf(item.layer),1);}
+        this.award();
+        if(this.state.vases.every(v=>!v.layers.length))this.state.status='won';
+        return removed;
+    }
     unlockByVideo(vaseId: string) { const v = this.vase(vaseId); if (!v?.lock || v.lock.unlocked)
         return false; v.lock.unlocked = true;if(this.state.vases.every(x=>!x.layers.length))this.state.status='won';return true; }
     revive() { this.state.remainingTime = 60; this.state.status = 'playing'; }

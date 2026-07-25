@@ -1,4 +1,4 @@
-import { _decorator, BlockInputEvents, Button, Color, Component, EventTouch, Graphics, HorizontalTextAlignment, Label, Node, Rect, ResolutionPolicy, resources, Size, Sprite, SpriteFrame, Texture2D, tween, UIOpacity, UITransform, Vec2, Vec3, VerticalTextAlignment, view } from 'cc';
+import { _decorator, BlockInputEvents, Button, Color, Component, EventTouch, Graphics, HorizontalTextAlignment, Input, input, Label, Node, Rect, ResolutionPolicy, resources, Size, Sprite, SpriteFrame, Texture2D, tween, UIOpacity, UITransform, Vec2, Vec3, VerticalTextAlignment, view } from 'cc';
 import { FLOWER_BY_ID, LEVELS } from './config/GameData';
 import { ArrangementModel } from './domain/ArrangementModel';
 import { LevelResult, PropType } from './domain/Types';
@@ -6,10 +6,16 @@ import { ConfigValidator } from './debug/ConfigValidator';
 import { SaveService } from './services/SaveService';
 import { PlatformService } from './services/PlatformService';
 import { AudioService } from './services/AudioService';
+import { createVasePositions, flowerVisualSlot } from './board/BoardLayout';
 const { ccclass } = _decorator;
 const C = { ink: new Color('#344840'), sage: new Color('#73A08D'), parchment: new Color('#F7F8F2'), paper: new Color('#FFFFFF'), gold: new Color('#E8AE61'), rose: new Color('#EF7890'), glass: new Color(55, 77, 68, 210), white: Color.WHITE };
 const PROP: Record<PropType, [string, string]> = { hourglass: ['prop_time', '加时'], magic: ['prop_magic', '随机消除'], hint: ['prop_shuffle', '打乱'] };
 const BUTTON_KEYS=['button_start','button_video_unlock','button_collect_stars','button_continue','button_level_select','button_restart','button_shuffle','button_next','button_revive','button_collection','button_replay'];
+type ActiveFlowerDrag={
+    sourceId:string;slotIndex:number;node:Node;sprite:Sprite;originalColor:Color;
+    proxy:Node;proxyStart:Vec3;moved:boolean;touchId:number|null;lastUi:Vec2;
+};
+type FlowerDragSource={touchNode:Node;flowerNode:Node;sourceId:string;slotIndex:number;};
 @ccclass('FlowerGameApp')
 export class FlowerGameApp extends Component {
     private root!: Node;
@@ -36,9 +42,12 @@ export class FlowerGameApp extends Component {
     private timerStarted=false;
     private lastHudSecond=-1;
     private lastHudRemaining=-1;
-    override start() { view.setDesignResolutionSize(750, 1334, ResolutionPolicy.FIXED_WIDTH);if(typeof document!=='undefined'){const doc:any=document;if(doc.documentElement?.style)doc.documentElement.style.touchAction='none';if(doc.body?.style){doc.body.style.touchAction='none';doc.body.style.overscrollBehavior='none';}const canvas=doc.querySelector?.('canvas');if(canvas?.style)canvas.style.touchAction='none';} AudioService.initialize(this.node);this.root = new Node('AppRoot');const visible=view.getVisibleSize();this.root.addComponent(UITransform).setContentSize(Math.max(750,visible.width),Math.max(1334,visible.height)); this.node.addChild(this.root);this.showLoading(); const errors = ConfigValidator.validate(); if (errors.length)
+    private activeDrag:ActiveFlowerDrag|null=null;
+    private selectedFlower:{sourceId:string;slotIndex:number}|null=null;
+    private dragSources:FlowerDragSource[]=[];
+    override start() { view.setDesignResolutionSize(750, 1334, ResolutionPolicy.FIXED_WIDTH);if(typeof document!=='undefined'){const doc:any=document;if(doc.documentElement?.style)doc.documentElement.style.touchAction='none';if(doc.body?.style){doc.body.style.touchAction='none';doc.body.style.overscrollBehavior='none';}const canvas=doc.querySelector?.('canvas');if(canvas?.style)canvas.style.touchAction='none';}input.on(Input.EventType.TOUCH_START,this.onBoardTouchStart,this);input.on(Input.EventType.TOUCH_MOVE,this.onBoardTouchMove,this);input.on(Input.EventType.TOUCH_END,this.onBoardTouchEnd,this);input.on(Input.EventType.TOUCH_CANCEL,this.onBoardTouchEnd,this); AudioService.initialize(this.node);this.root = new Node('AppRoot');const visible=view.getVisibleSize();this.root.addComponent(UITransform).setContentSize(Math.max(750,visible.width),Math.max(1334,visible.height)); this.node.addChild(this.root);this.showLoading(); const errors = ConfigValidator.validate(); if (errors.length)
         console.error(errors.join('\n'));this.loadArtAssets(progress=>this.updateLoading(progress)).then(() => {this.updateLoading(1);this.scheduleOnce(()=>{AudioService.ensureMusic();this.showHome();},.06);}); }
-    override onDestroy(){this.unscheduleAllCallbacks();}
+    override onDestroy(){this.cancelActiveDrag();input.off(Input.EventType.TOUCH_START,this.onBoardTouchStart,this);input.off(Input.EventType.TOUCH_MOVE,this.onBoardTouchMove,this);input.off(Input.EventType.TOUCH_END,this.onBoardTouchEnd,this);input.off(Input.EventType.TOUCH_CANCEL,this.onBoardTouchEnd,this);this.unscheduleAllCallbacks();}
     private async loadArtAssets(onProgress:(progress:number)=>void,only?:Set<string>) { const entries: {
         key: string;
         path: string;
@@ -60,7 +69,7 @@ export class FlowerGameApp extends Component {
         this.showFail(); }
     private showLoading(){this.root.removeAllChildren();const visible=view.getVisibleSize(),bg=this.panel(this.root,'LoadingBackground',0,0,Math.max(750,visible.width),Math.max(1334,visible.height),new Color('#F6F1E5'),0);this.text(bg,'花香正在抵达…',0,-215,23,C.sage);this.panel(bg,'LoadingTrack',0,-270,480,28,new Color(219,224,208,255),14);const fill=new Node('LoadingFill');fill.setPosition(-230,-270);fill.addComponent(UITransform).setContentSize(460,22);this.loadingBar=fill.addComponent(Graphics);bg.addChild(fill);this.loadingLabel=this.text(bg,'0%',0,-320,20,C.ink,180);this.updateLoading(0);}
     private updateLoading(progress:number){const p=Math.max(0,Math.min(1,progress));if(this.loadingLabel)this.loadingLabel.string=`${Math.round(p*100)}%`;if(this.loadingBar){this.loadingBar.clear();this.loadingBar.fillColor=C.sage;this.loadingBar.roundRect(0,-11,460*p,22,11);this.loadingBar.fill();}}
-    private clear() { this.unscheduleAllCallbacks();this.deadlockCheckToken++;this.draggingFlower=false;this.timerStarted=false;this.lastHudSecond=-1;this.lastHudRemaining=-1;this.root.removeAllChildren(); this.model = null; this.vaseArea = null; this.propArea = null; this.vaseTargets.clear();this.vaseVisualSlots.clear(); this.timeLabel = null; this.progressLabel = null;this.loadingLabel=null;this.loadingBar=null;this.tutorialStep=-1; this.hint = null; this.modal = false; }
+    private clear() { this.unscheduleAllCallbacks();this.cancelActiveDrag();this.selectedFlower=null;this.dragSources.length=0;this.deadlockCheckToken++;this.draggingFlower=false;this.timerStarted=false;this.lastHudSecond=-1;this.lastHudRemaining=-1;this.root.removeAllChildren(); this.model = null; this.vaseArea = null; this.propArea = null; this.vaseTargets.clear();this.vaseVisualSlots.clear(); this.timeLabel = null; this.progressLabel = null;this.loadingLabel=null;this.loadingBar=null;this.tutorialStep=-1; this.hint = null; this.modal = false; }
     private panel(p: Node, name: string, x: number, y: number, w: number, h: number, color: Color, r = 20) { const n = new Node(name); n.setPosition(x, y); n.addComponent(UITransform).setContentSize(w, h); const g = n.addComponent(Graphics); g.fillColor = color; g.roundRect(-w / 2, -h / 2, w, h, r); g.fill(); p.addChild(n); return n; }
     private fullPanel(p:Node,name:string,color:Color){const visible=view.getVisibleSize();return this.panel(p,name,0,0,Math.max(750,visible.width),Math.max(1334,visible.height),color,0);}
     private modalPanel(p:Node,name:string,color:Color){const n=this.fullPanel(p,name,color);n.addComponent(BlockInputEvents);return n;}
@@ -114,26 +123,27 @@ export class FlowerGameApp extends Component {
     private render() { this.renderVases(); this.renderProps(); this.refreshHud(); }
     private flowerInsertOffset(_id:string){return 0;}
     private flowerSlotX(id:string,slot:number,ghost=false){const spread=id==='freesia'?(ghost?18:25):id==='rose'||id==='sunflower'?(ghost?24:32):(ghost?22:29);return(slot-1)*spread;}
-    private flowerSlotRotation(id:string,slot:number){const left=id==='freesia'?27:id==='rose'||id==='sunflower'?26:24,right=id==='freesia'?21:id==='rose'||id==='sunflower'?20:19;return[left,0,-right][slot]||0;}
-    private displaySlot(index:number,count:number){return count<=1?1:count===2?[0,2][index]:index;}
+    private flowerSlotRotation(id:string,slot:number){const left=id==='freesia'?34:id==='rose'||id==='sunflower'?32:30,right=id==='freesia'?29:id==='rose'||id==='sunflower'?27:26;return[left,0,-right][slot]||0;}
+    private displaySlot(index:number,count:number){return flowerVisualSlot(index,count);}
     private defaultVisualSlots(count:number){return Array.from({length:count},(_,index)=>this.displaySlot(index,count));}
     private captureVisualState(){const state=new Map<string,{flowers:string[];slots:number[]}>();if(!this.model)return state;for(const vase of this.model.state.vases){const flowers=this.model.visible(vase.id),slots=(this.vaseVisualSlots.get(vase.id)||this.defaultVisualSlots(flowers.length)).slice();state.set(vase.id,{flowers,slots});}return state;}
     private reconcileVisualSlots(before:Map<string,{flowers:string[];slots:number[]}>){if(!this.model)return;for(const vase of this.model.state.vases){const flowers=this.model.visible(vase.id),old=before.get(vase.id);if(!old){this.vaseVisualSlots.set(vase.id,this.defaultVisualSlots(flowers.length));continue;}const used=old.flowers.map(()=>false),slots:number[]=[];for(const flower of flowers){const match=old.flowers.findIndex((item,index)=>!used[index]&&item===flower);if(match>=0){used[match]=true;slots.push(old.slots[match]);}else{const free=[1,0,2].find(slot=>slots.indexOf(slot)<0);slots.push(free??slots.length);}}this.vaseVisualSlots.set(vase.id,slots);}}
     private flowerCenterCorrection(id:string){const offsets:Record<string,number>={anemone:-10,babybreath:3,camellia:-5,carnation:-6,cherry:-10,eucalyptus:7,freesia:13,hibiscus:15,iris:7,lily:5,orchid:6,peony:-3,ranunculus:-7,sunflower:-15,tulip:-14};return offsets[id]||0;}
-    private flowerSlotCorrection(id:string,slot:number){const correction=this.flowerCenterCorrection(id);return id==='freesia'&&slot===2?-correction:correction;}
-    private positions(count:number){if(count===3)return Array.from({length:3},(_,i)=>({x:(i-1)*225,y:85}));if(count===9)return Array.from({length:9},(_,i)=>({x:(i%3-1)*215,y:285-Math.floor(i/3)*285}));if(count<=6)return Array.from({length:count},(_,i)=>({x:-240+(i%3)*240,y:245-Math.floor(i/3)*350}));const topCount=Math.ceil(count/2),spacing=180;return Array.from({length:count},(_,i)=>{const top=i<topCount,rowIndex=top?i:i-topCount,rowCount=top?topCount:count-topCount;return{x:(rowIndex-(rowCount-1)/2)*spacing,y:top?245:-145};});}
+    private flowerSlotCorrection(id:string,slot:number){if(slot===1)return 0;const correction=this.flowerCenterCorrection(id);return id==='freesia'&&slot===2?-correction:correction;}
     private renderVases() {
         if (!this.model || !this.vaseArea)
             return;
         this.vaseArea.removeAllChildren();
         this.vaseTargets.clear();
-        const pos = this.positions(this.model.state.vases.length);
+        this.dragSources.length=0;
+        const pos = createVasePositions(this.model.state.vases.length);
         this.model.state.vases.forEach((v, i) => {
-            const compact = this.model!.state.vases.length > 6, w = compact ? 170 : 218, n = new Node(v.id);
+            const vaseCount=this.model!.state.vases.length,compact=vaseCount>6,trio=vaseCount===3,w=trio?240:compact?170:218,n = new Node(v.id);
             n.setPosition(pos[i].x, pos[i].y);
             n.addComponent(UITransform).setContentSize(w, 300);
             this.vaseArea!.addChild(n);
             this.vaseTargets.set(v.id, n);
+            n.on(Node.EventType.TOUCH_END,()=>this.placeSelectedFlower(v.id),this);
             if (this.hint?.targetId === v.id) {
                 const g = n.addComponent(Graphics);
                 g.strokeColor = C.gold;
@@ -142,10 +152,10 @@ export class FlowerGameApp extends Component {
                 g.stroke();
             }
             const skinNo=v.skinId.replace('vase_','');
-            const vaseInner=this.art(n,`vase_inner_${skinNo}`,0,-62,compact?112:145,compact?150:165);vaseInner.setSiblingIndex(0);
-            const visible = v.lock&&!v.lock.unlocked?(v.lock.type==='video'?[]:this.model!.peekLocked(v.id)):this.model!.visible(v.id),ghost=this.model!.nextVisible(v.id),ghostYs=[20,32,20];for(let slot=0;slot<ghost.length;slot++){const visualSlot=this.displaySlot(slot,ghost.length),insertOffset=this.flowerInsertOffset(ghost[slot]),centerOffset=this.flowerSlotCorrection(ghost[slot],visualSlot),f=this.art(n,ghost[slot],this.flowerSlotX(ghost[slot],visualSlot,true)+centerOffset,ghostYs[visualSlot]+insertOffset,compact?74:86,compact?154:172);f.setRotationFromEuler(0,0,this.flowerSlotRotation(ghost[slot],visualSlot));if(ghost[slot]==='freesia'&&visualSlot===2)f.setScale(-1,1,1);f.addComponent(UIOpacity).opacity=82;f.setSiblingIndex(1+slot);}let visualSlots=this.vaseVisualSlots.get(v.id);if(!visualSlots||visualSlots.length!==visible.length){visualSlots=this.defaultVisualSlots(visible.length);this.vaseVisualSlots.set(v.id,visualSlots);}const ys = [30, 44, 30];
+            const vaseInner=this.art(n,`vase_inner_${skinNo}`,0,-62,trio?165:compact?112:145,trio?188:compact?150:165);vaseInner.setSiblingIndex(0);
+            const visible = v.lock&&!v.lock.unlocked?(v.lock.type==='video'?[]:this.model!.peekLocked(v.id)):this.model!.visible(v.id),ghost=this.model!.nextVisible(v.id),ghostYs=[20,32,20];for(let slot=0;slot<ghost.length;slot++){const visualSlot=this.displaySlot(slot,ghost.length),insertOffset=this.flowerInsertOffset(ghost[slot]),centerOffset=this.flowerSlotCorrection(ghost[slot],visualSlot),f=this.art(n,ghost[slot],this.flowerSlotX(ghost[slot],visualSlot,true)+centerOffset,ghostYs[visualSlot]+insertOffset,trio?102:compact?80:93,trio?202:compact?166:186);f.setRotationFromEuler(0,0,this.flowerSlotRotation(ghost[slot],visualSlot));if(ghost[slot]==='freesia'&&visualSlot===2)f.setScale(-1,1,1);f.addComponent(UIOpacity).opacity=70;f.setSiblingIndex(1+slot);}let visualSlots=this.vaseVisualSlots.get(v.id);if(!visualSlots||visualSlots.length!==visible.length){visualSlots=this.defaultVisualSlots(visible.length);this.vaseVisualSlots.set(v.id,visualSlots);}const ys = [30, 44, 30];
             for (let slot = 0; slot < visible.length; slot++) {
-                const visualSlot=visualSlots[slot],insertOffset=this.flowerInsertOffset(visible[slot]),centerOffset=this.flowerSlotCorrection(visible[slot],visualSlot),flower = this.art(n, visible[slot], this.flowerSlotX(visible[slot],visualSlot)+centerOffset, ys[visualSlot]+insertOffset, compact ? 100 : 115, compact ? 205 : 225);
+                const visualSlot=visualSlots[slot],insertOffset=this.flowerInsertOffset(visible[slot]),centerOffset=this.flowerSlotCorrection(visible[slot],visualSlot),flower = this.art(n, visible[slot], this.flowerSlotX(visible[slot],visualSlot)+centerOffset, ys[visualSlot]+insertOffset, trio?136:compact?108:124, trio?266:compact?221:243);
                 flower.setRotationFromEuler(0, 0, this.flowerSlotRotation(visible[slot],visualSlot));
                 if(visible[slot]==='freesia'&&visualSlot===2)flower.setScale(-1,1,1);
                 const tutorialMove=this.expectedTutorialMove();if((!v.lock||v.lock.unlocked)&&(this.tutorialStep<0||(tutorialMove?.sourceId===v.id&&tutorialMove.slotIndex===slot)))this.enableDrag(flower, v.id, slot,visualSlot);
@@ -157,22 +167,125 @@ export class FlowerGameApp extends Component {
                     g.stroke();
                 }
             }
-            const vaseOpaque=this.art(n,`vase_opaque_${skinNo}`,0,-62,compact?112:145,compact?150:165);vaseOpaque.setSiblingIndex(45);const vaseFront=this.art(n,`vase_front_${skinNo}`,0,-62,compact?112:145,compact?150:165);vaseFront.setSiblingIndex(50);
+            const vaseOpaque=this.art(n,`vase_opaque_${skinNo}`,0,-62,trio?165:compact?112:145,trio?188:compact?150:165);vaseOpaque.setSiblingIndex(45);const vaseFront=this.art(n,`vase_front_${skinNo}`,0,-62,trio?165:compact?112:145,trio?188:compact?150:165);vaseFront.setSiblingIndex(50);
             if(v.lock&&!v.lock.unlocked){const lock=this.art(n,'lock_count',0,-36,compact?104:126,compact?134:160);lock.setSiblingIndex(80);lock.addComponent(Button);lock.on(Button.EventType.CLICK,()=>{AudioService.playButton();this.unlockVase(v.id);},this);this.art(lock,'lock_video',0,31,compact?43:49,compact?43:49);if(v.lock.type==='flowers'){const left=Math.max(0,v.lock.required-this.model!.state.eliminatedGroups*3);this.text(lock,String(left),0,-15,compact?31:35,C.ink,82);}else this.text(lock,'视频解锁',0,-28,compact?15:18,C.ink,94);}
         });
     }
     private enableDrag(n:Node,sourceId:string,slotIndex:number,visualSlot:number){
-        const touchNode=new Node('FlowerTouchArea');touchNode.setPosition([-24,0,24][visualSlot]||0,54);touchNode.addComponent(UITransform).setContentSize(52,205);n.addChild(touchNode);touchNode.setSiblingIndex(200);
-        const sprite=n.getComponent(Sprite)!;let originalColor=new Color(sprite.color.r,sprite.color.g,sprite.color.b,sprite.color.a),proxy:Node|null=null,proxyStart=new Vec3(),pointerStart=new Vec2(),releaseInVaseArea=new Vec2(),active=false,moved=false,ended=true;
-        const toRootSpace=(p:Vec2)=>{const local=this.root.getComponent(UITransform)!.convertToNodeSpaceAR(new Vec3(p.x,p.y,0));return new Vec2(local.x,local.y);};
-        const toVaseSpace=(p:Vec2)=>{const rootPoint=toRootSpace(p),area=this.vaseArea!.position;return new Vec2(rootPoint.x-area.x,rootPoint.y-area.y);};
-        const createProxy=()=>{if(proxy||!this.vaseArea)return;const transform=n.getComponent(UITransform)!,dragNode=new Node('DraggingFlower');dragNode.addComponent(UITransform).setContentSize(transform.contentSize);const dragSprite=dragNode.addComponent(Sprite);dragSprite.sizeMode=Sprite.SizeMode.CUSTOM;dragSprite.spriteFrame=sprite.spriteFrame;dragSprite.color=originalColor;const vase=n.parent!,area=this.vaseArea.position;dragNode.setPosition(area.x+vase.position.x+n.position.x,area.y+vase.position.y+n.position.y);dragNode.setRotationFromEuler(0,0,0);dragNode.setScale(n.scale);this.root.addChild(dragNode);dragNode.setSiblingIndex(this.root.children.length-1);proxy=dragNode;proxyStart=dragNode.position.clone();sprite.color=new Color(originalColor.r,originalColor.g,originalColor.b,0);};
-        const targetAtRelease=()=>{const dragProxy=proxy,areaNode=this.vaseArea;if(!dragProxy?.isValid||!areaNode?.isValid)return undefined;const targetSnapshot=[...this.vaseTargets.entries()].filter((entry):entry is[string,Node]=>!!entry[1]?.isValid).map(([id,node])=>({id,node,position:node.position.clone(),open:id!==sourceId&&!!this.model?.canReceive(id)})),expected=this.expectedTutorialMove();if(expected?.sourceId===sourceId&&expected.slotIndex===slotIndex){const target=targetSnapshot.find(item=>item.id===expected.targetId&&item.open);if(target){console.log('[拖放判定]',{mode:'tutorial',sourceId,slotIndex,targetId:expected.targetId,releaseX:Math.round(releaseInVaseArea.x),releaseY:Math.round(releaseInVaseArea.y)});return[expected.targetId,target.node]as[string,Node];}}const area=areaNode.position.clone(),dragPosition=dragProxy.position.clone(),proxyPoint=new Vec2(dragPosition.x-area.x,dragPosition.y-area.y),rank=(point:Vec2)=>targetSnapshot.filter(item=>item.open).map(target=>{const dx=point.x-target.position.x,dy=point.y-target.position.y;return{target,distance:dx*dx+dy*dy*.16};}).sort((a,b)=>a.distance-b.distance),pointerRank=rank(releaseInVaseArea),visualRank=rank(proxyPoint),bestPointer=pointerRank[0],bestVisual=visualRank[0],best=!bestPointer?bestVisual:!bestVisual?bestPointer:bestPointer.distance<=bestVisual.distance?bestPointer:bestVisual,selected=best?.target;console.log('[拖放判定]',{mode:best===bestPointer?'pointer':'visual',sourceId,slotIndex,targetId:selected?.id||null,releaseX:Math.round(releaseInVaseArea.x),releaseY:Math.round(releaseInVaseArea.y),visualX:Math.round(proxyPoint.x),visualY:Math.round(proxyPoint.y),distance:best?Math.round(best.distance):null,targets:targetSnapshot.map(item=>({id:item.id,x:Math.round(item.position.x),y:Math.round(item.position.y),open:item.open}))});return selected?[selected.id,selected.node]as[string,Node]:undefined;};
-        const finish=(accept=true)=>{if(ended)return;ended=true;active=false;if(n.isValid)sprite.color=originalColor;const target=accept&&moved?targetAtRelease():undefined,current=proxy;proxy=null;this.draggingFlower=false;if(target){current?.destroy();this.transfer(sourceId,slotIndex,target[0]);}else{if(current)tween(current).to(.1,{position:proxyStart}).call(()=>current.destroy()).start();this.scheduleDeadlockCheck(.02);}moved=false;};
-        const move=(uiPoint:Vec2)=>{if(ended||!active)return;releaseInVaseArea=toVaseSpace(uiPoint);const p=toRootSpace(uiPoint),dx=p.x-pointerStart.x,dy=p.y-pointerStart.y;if(!moved&&dx*dx+dy*dy<=16)return;if(!moved){moved=true;createProxy();}if(!proxy)return;proxy.setPosition(proxyStart.x+dx,proxyStart.y+dy);proxy.setSiblingIndex(this.root.children.length-1);};
-        const onTouchMove=(e:EventTouch)=>{if(active){e.propagationStopped=true;move(e.getUILocation());}},onTouchEnd=(e:EventTouch)=>{if(active){e.propagationStopped=true;move(e.getUILocation());finish(true);}},onTouchCancel=(e:EventTouch)=>{if(active){e.propagationStopped=true;move(e.getUILocation());finish(true);}};
-        const begin=(e:EventTouch)=>{if(!ended||this.draggingFlower||!n.isValid)return;e.propagationStopped=true;this.timerStarted=true;this.draggingFlower=true;this.deadlockCheckToken++;originalColor=new Color(sprite.color.r,sprite.color.g,sprite.color.b,sprite.color.a);const ui=e.getUILocation(),p=toRootSpace(ui);releaseInVaseArea=toVaseSpace(ui);pointerStart.set(p.x,p.y);active=true;moved=false;ended=false;};
-        touchNode.on(Node.EventType.TOUCH_START,begin,this);touchNode.on(Node.EventType.TOUCH_MOVE,onTouchMove,this);touchNode.on(Node.EventType.TOUCH_END,onTouchEnd,this);touchNode.on(Node.EventType.TOUCH_CANCEL,onTouchCancel,this);
+        const touchNode=new Node('FlowerTouchArea');
+        touchNode.setPosition([-24,0,24][visualSlot]||0,54);
+        touchNode.addComponent(UITransform).setContentSize(64,220);
+        n.addChild(touchNode);
+        touchNode.setSiblingIndex(200);
+        touchNode.on(Node.EventType.TOUCH_START,(event:EventTouch)=>{
+            event.propagationStopped=true;
+            this.beginFlowerDrag(n,sourceId,slotIndex,event);
+        },this);
+        touchNode.on(Node.EventType.TOUCH_MOVE,(event:EventTouch)=>this.onBoardTouchMove(event),this);
+        touchNode.on(Node.EventType.TOUCH_END,(event:EventTouch)=>this.onBoardTouchEnd(event),this);
+        touchNode.on(Node.EventType.TOUCH_CANCEL,(event:EventTouch)=>this.onBoardTouchEnd(event),this);
+        this.dragSources.push({touchNode,flowerNode:n,sourceId,slotIndex});
+    }
+    private onBoardTouchStart(event:EventTouch){
+        if(this.activeDrag||this.modal)return;
+        const screenPoint=event.getLocation();
+        for(let index=this.dragSources.length-1;index>=0;index--){
+            const source=this.dragSources[index];
+            if(!source.touchNode.isValid||!source.flowerNode.isValid)continue;
+            if(source.touchNode.getComponent(UITransform)!.hitTest(screenPoint,event.windowId)){
+                this.beginFlowerDrag(source.flowerNode,source.sourceId,source.slotIndex,event);
+                return;
+            }
+        }
+    }
+    private beginFlowerDrag(node:Node,sourceId:string,slotIndex:number,event:EventTouch){
+        if(this.modal||this.activeDrag||!this.model||!this.vaseArea||!node.isValid)return;
+        const sprite=node.getComponent(Sprite),transform=node.getComponent(UITransform),vase=node.parent;
+        if(!sprite||!transform||!vase)return;
+        const originalColor=new Color(sprite.color.r,sprite.color.g,sprite.color.b,sprite.color.a);
+        const proxy=new Node('DraggingFlower');
+        proxy.addComponent(UITransform).setContentSize(transform.contentSize);
+        const proxySprite=proxy.addComponent(Sprite);
+        proxySprite.sizeMode=Sprite.SizeMode.CUSTOM;
+        proxySprite.spriteFrame=sprite.spriteFrame;
+        proxySprite.color=originalColor;
+        proxy.setPosition(this.vaseArea.position.x+vase.position.x+node.position.x,this.vaseArea.position.y+vase.position.y+node.position.y);
+        proxy.setScale(node.scale);
+        this.root.addChild(proxy);
+        proxy.setSiblingIndex(this.root.children.length-1);
+        sprite.color=new Color(originalColor.r,originalColor.g,originalColor.b,0);
+        const touchId=event.getID();
+        this.activeDrag={sourceId,slotIndex,node,sprite,originalColor,proxy,proxyStart:proxy.position.clone(),moved:false,touchId,lastUi:event.getUILocation().clone()};
+        this.selectedFlower={sourceId,slotIndex};
+        this.draggingFlower=true;
+        this.timerStarted=true;
+        this.deadlockCheckToken++;
+    }
+    private onBoardTouchMove(event:EventTouch){
+        const drag=this.activeDrag;
+        if(!drag||!drag.proxy.isValid||drag.touchId!==event.getID())return;
+        this.syncDragPosition(drag,event);
+    }
+    private syncDragPosition(drag:ActiveFlowerDrag,event:EventTouch){
+        const current=event.getUILocation(),dx=current.x-drag.lastUi.x,dy=current.y-drag.lastUi.y;
+        drag.lastUi.set(current);
+        if(Math.abs(dx)+Math.abs(dy)>0)drag.moved=true;
+        drag.proxy.setPosition(drag.proxy.position.x+dx,drag.proxy.position.y+dy);
+        drag.proxy.setSiblingIndex(this.root.children.length-1);
+    }
+    private onBoardTouchEnd(event:EventTouch){
+        if(!this.activeDrag||this.activeDrag.touchId!==event.getID())return;
+        const drag=this.activeDrag;
+        this.syncDragPosition(drag,event);
+        const target=this.resolveDropTarget(drag,.1);
+        if(target)this.finishFlowerDrag(target);
+        else this.finishFlowerDrag(null);
+    }
+    private resolveDropTarget(drag:ActiveFlowerDrag,minOverlapRatio:number){
+        const expected=this.expectedTutorialMove();
+        if(!this.vaseArea)return null;
+        const transform=drag.proxy.getComponent(UITransform)!,scale=drag.proxy.scale;
+        const width=transform.contentSize.width*Math.abs(scale.x),height=transform.contentSize.height*Math.abs(scale.y);
+        const flowerRect=new Rect(drag.proxy.position.x-width/2,drag.proxy.position.y-height/2,width,height);
+        const measured=Array.from(this.vaseTargets.entries()).filter(([id,node])=>id!==drag.sourceId&&node.isValid&&!!this.model?.canReceive(id)&&(!expected||expected.sourceId!==drag.sourceId||expected.slotIndex!==drag.slotIndex||id===expected.targetId)).map(([id,node])=>{
+            const size=node.getComponent(UITransform)!.contentSize;
+            const centerX=this.vaseArea!.position.x+node.position.x,centerY=this.vaseArea!.position.y+node.position.y;
+            const vaseRect=new Rect(centerX-size.width/2-24,centerY-size.height/2-30,size.width+48,size.height+60);
+            const overlap=Math.max(0,Math.min(flowerRect.xMax,vaseRect.xMax)-Math.max(flowerRect.xMin,vaseRect.xMin))*Math.max(0,Math.min(flowerRect.yMax,vaseRect.yMax)-Math.max(flowerRect.yMin,vaseRect.yMin));
+            const dx=drag.proxy.position.x-centerX,dy=drag.proxy.position.y-centerY;
+            return{id,ratio:overlap/(width*height),distance:dx*dx+dy*dy};
+        });
+        const ranked=measured.filter(item=>item.ratio>=minOverlapRatio).sort((a,b)=>b.ratio-a.ratio||a.distance-b.distance);
+        return ranked[0]?.id||null;
+    }
+    private finishFlowerDrag(targetId:string|null){
+        const drag=this.activeDrag;
+        if(!drag)return;
+        this.activeDrag=null;
+        this.draggingFlower=false;
+        if(drag.node.isValid)drag.sprite.color=drag.originalColor;
+        if(targetId){
+            drag.proxy.destroy();
+            this.selectedFlower=null;
+            this.transfer(drag.sourceId,drag.slotIndex,targetId);
+            return;
+        }
+        if(drag.proxy.isValid)tween(drag.proxy).to(.1,{position:drag.proxyStart}).call(()=>drag.proxy.destroy()).start();
+        this.scheduleDeadlockCheck(.02);
+    }
+    private cancelActiveDrag(){
+        const drag=this.activeDrag;
+        this.activeDrag=null;
+        this.draggingFlower=false;
+        if(!drag)return;
+        if(drag.node.isValid)drag.sprite.color=drag.originalColor;
+        if(drag.proxy.isValid)drag.proxy.destroy();
+    }
+    private placeSelectedFlower(targetId:string){
+        const selected=this.selectedFlower;
+        if(!selected||this.activeDrag||targetId===selected.sourceId||!this.model?.canReceive(targetId))return;
+        this.selectedFlower=null;
+        this.transfer(selected.sourceId,selected.slotIndex,targetId);
     }
     private unlockVase(id:string){if(!this.model)return;this.logVideoClick('花瓶解锁',{vaseId:id,levelId:this.model.level.id});if(this.model.unlockByVideo(id)){this.toast('新花瓶已解锁');this.render();if(this.model.state.status==='won')this.scheduleOnce(()=>this.win(),.3);}}
     private audioSettingRow(parent:Node,title:string,y:number,kind:'music'|'sfx'){this.text(parent,title,-85,y,26,C.ink,230);const state=SaveService.load(),enabled=state[kind],toggle=this.art(parent,'button_circle',145,y,92,92);toggle.name=`Toggle_${kind}`;toggle.getComponent(Sprite)!.color=enabled?Color.WHITE:new Color('#A7AAA2');toggle.addComponent(Button);const label=this.text(toggle,enabled?'开':'关',0,1,23,enabled?C.ink:new Color('#737A75'),60);toggle.on(Button.EventType.CLICK,()=>{AudioService.playButton();const next=!SaveService.load()[kind];SaveService.setAudio(kind,next);AudioService.syncSettings();if(kind==='sfx'&&next)AudioService.playButton();toggle.getComponent(Sprite)!.color=next?Color.WHITE:new Color('#A7AAA2');label.string=next?'开':'关';label.color=next?C.ink:new Color('#737A75');},this);}
@@ -187,14 +300,14 @@ export class FlowerGameApp extends Component {
     }const sourceState=visualBefore.get(source);if(sourceState){if(sourceBefore.length<=1)visualBefore.delete(source);else{sourceState.flowers.splice(slotIndex,1);sourceState.slots.splice(slotIndex,1);}}if(r.eliminated.length)visualBefore.delete(target);this.reconcileVisualSlots(visualBefore); this.hint = null;this.clearTutorialGuide();if(this.tutorialStep>=0){if(this.tutorialStep===2&&r.eliminated.length){this.tutorialStep=-1;SaveService.markTutorialDone();}else this.tutorialStep++;} PlatformService.vibrate(); this.render();if(r.eliminated.length){this.matchFx(target);AudioService.playMatch();}if(this.tutorialStep>=0)this.scheduleOnce(()=>this.startTutorialGuide(),.2); if (r.won)
         this.scheduleOnce(() => this.win(), .35); else this.scheduleDeadlockCheck(.01); }
     private scheduleDeadlockCheck(delay=.01){const current=this.model;if(current&&!this.draggingFlower&&!this.modal&&current.state.status==='playing'&&!current.state.vases.some(v=>current.canReceive(v.id))){this.deadlockCheckToken++;this.showNoMoves(true);return;}const token=++this.deadlockCheckToken;this.scheduleOnce(async()=>{if(token!==this.deadlockCheckToken||this.draggingFlower||!this.model||this.modal||this.model.state.status!=='playing')return;const model=this.model,canContinue=await model.hasUsefulMoveAsync(()=>token!==this.deadlockCheckToken||this.draggingFlower||this.model!==model||this.modal);if(token!==this.deadlockCheckToken||this.draggingFlower||this.model!==model||this.modal||model.state.status!=='playing')return;if(!canContinue)this.showNoMoves(true);},delay);}
-    private showNoMoves(verified=false){if(!this.model||this.modal||this.model.state.status!=='playing'||(!verified&&this.model.hasUsefulMove()))return;this.deadlockCheckToken++;this.model.state.status='paused';this.modal=true;const s=this.modalPanel(this.root,'NoMoves',new Color(24,34,29,200)),c=this.artPanel(s,'Card',0,0,600,690);this.text(c,'暂时没有可移动的位置',0,230,31,C.ink,480);this.text(c,'所有可操作花瓶都已放满，\n当前没有花朵可以移动到其他花瓶。',0,125,20,C.sage,420);this.videoButton(c,'打乱花朵继续',0,-25,300,70,()=>{this.model!.state.status='playing';if(!this.model!.shuffleVisible()){this.model!.state.status='paused';this.toast('当前花朵无法安全重排，请重新挑战');return;}s.destroy();this.modal=false;this.render();this.scheduleDeadlockCheck(.12);});this.button(c,'重新挑战',0,-125,300,70,()=>this.startLevel(this.model!.level.id),true,C.rose);this.button(c,'返回选关',0,-225,300,70,()=>this.showLevels());}
+    private showNoMoves(verified=false){if(!this.model||this.modal||this.model.state.status!=='playing'||(!verified&&this.model.hasUsefulMove()))return;this.deadlockCheckToken++;this.model.state.status='paused';this.modal=true;const s=this.modalPanel(this.root,'NoMoves',new Color(24,34,29,200)),c=this.artPanel(s,'Card',0,0,600,690);this.text(c,'暂时没有可移动的位置',0,230,31,C.ink,480);this.text(c,'所有可操作花瓶都已放满，\n当前没有花朵可以移动到其他花瓶。',0,125,20,C.sage,420);this.videoButton(c,'打乱花朵继续',0,-25,300,70,()=>{this.model!.state.status='playing';if(!this.model!.shuffleAll()){this.model!.state.status='paused';this.toast('当前没有足够的花朵可以重排');return;}s.destroy();this.modal=false;this.render();this.scheduleDeadlockCheck(.12);});this.button(c,'重新挑战',0,-125,300,70,()=>this.startLevel(this.model!.level.id),true,C.rose);this.button(c,'返回选关',0,-225,300,70,()=>this.showLevels());}
     private renderProps() { if (!this.model || !this.propArea)return;const a=this.propArea;a.removeAllChildren();(['hourglass','magic','hint'] as PropType[]).forEach((p,i)=>{const [icon,name]=PROP[p],x=-195+i*195,n=this.art(a,'button_circle',x,0,148,148);n.name=p;n.addComponent(Button);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();this.useVideoProp(p,name);},this);this.art(n,icon,0,10,72,72);const label=this.panel(n,'PropLabel',0,-50,132,42,new Color(52,72,64,245),20);this.text(label,name,0,0,23,C.white,124);const video=this.art(n,'lock_video',53,53,42,42);video.name='VideoBadge';}); }
-    private useVideoProp(p:PropType,name=PROP[p][1]){if(!this.model||this.modal)return;if(this.tutorialStep>=0){this.toast('完成新手指引后才可以使用道具');return;}this.logVideoClick(`道具：${name}`,{propType:p,levelId:this.model.level.id});if(p==='hint'){if(!this.model.shuffleVisible()){this.toast('当前剩余花朵无法重新排列');return;}this.vaseVisualSlots.clear();this.render();this.scheduleDeadlockCheck(.12);return;}this.model.props[p]++;this.useProp(p);}
+    private useVideoProp(p:PropType,name=PROP[p][1]){if(!this.model||this.modal)return;this.logVideoClick(`道具：${name}`,{propType:p,levelId:this.model.level.id});if(p==='hint'){if(!this.model.shuffleAll()){this.toast('当前没有足够的花朵可以重排');return;}this.hint=null;this.vaseVisualSlots.clear();this.render();this.scheduleDeadlockCheck(.12);return;}this.model.props[p]++;this.useProp(p);}
     private nextLevelId(id:number){return id>=60?1:id+1;}
     private useProp(p: PropType) { if (!this.model)
         return; let ok = false; if (p === 'hourglass')
         ok = this.model.useHourglass(); if (p === 'magic')
-        ok = this.model.useMagic().length > 0; if (!ok)
+        ok = this.model.useMagicAll().length > 0; if (!ok)
         this.toast('现在还不能使用这个道具'); this.render(); if (this.model.state.status === 'won')
         this.scheduleOnce(() => this.win(), .3); }
     private refreshHud() { if (!this.model)
