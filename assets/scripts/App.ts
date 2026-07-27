@@ -1,9 +1,9 @@
-import { _decorator, BlockInputEvents, Button, Color, Component, EventTouch, Graphics, HorizontalTextAlignment, Input, input, Label, Node, Rect, ResolutionPolicy, resources, Size, Sprite, SpriteFrame, Texture2D, tween, UIOpacity, UITransform, Vec2, Vec3, VerticalTextAlignment, view } from 'cc';
+import { _decorator, BlockInputEvents, Button, Color, Component, EventTouch, game, Graphics, HorizontalTextAlignment, Input, input, Label, Node, Rect, ResolutionPolicy, resources, Size, Sprite, SpriteFrame, Texture2D, tween, UIOpacity, UITransform, Vec2, Vec3, VerticalTextAlignment, view } from 'cc';
 import { FLOWER_BY_ID, LEVELS } from './config/GameData';
 import { ArrangementModel } from './domain/ArrangementModel';
 import { LevelResult, PropType } from './domain/Types';
 import { ConfigValidator } from './debug/ConfigValidator';
-import { SaveService } from './services/SaveService';
+import { DAILY_REWARDS, SaveService } from './services/SaveService';
 import { PlatformService } from './services/PlatformService';
 import { AudioService } from './services/AudioService';
 import { createVasePositions, flowerVisualSlot } from './board/BoardLayout';
@@ -45,13 +45,13 @@ export class FlowerGameApp extends Component {
     private activeDrag:ActiveFlowerDrag|null=null;
     private selectedFlower:{sourceId:string;slotIndex:number}|null=null;
     private dragSources:FlowerDragSource[]=[];
-    override start() { view.setDesignResolutionSize(750, 1334, ResolutionPolicy.FIXED_WIDTH);if(typeof document!=='undefined'){const doc:any=document;if(doc.documentElement?.style)doc.documentElement.style.touchAction='none';if(doc.body?.style){doc.body.style.touchAction='none';doc.body.style.overscrollBehavior='none';}const canvas=doc.querySelector?.('canvas');if(canvas?.style)canvas.style.touchAction='none';}input.on(Input.EventType.TOUCH_START,this.onBoardTouchStart,this);input.on(Input.EventType.TOUCH_MOVE,this.onBoardTouchMove,this);input.on(Input.EventType.TOUCH_END,this.onBoardTouchEnd,this);input.on(Input.EventType.TOUCH_CANCEL,this.onBoardTouchEnd,this); AudioService.initialize(this.node);this.root = new Node('AppRoot');const visible=view.getVisibleSize();this.root.addComponent(UITransform).setContentSize(Math.max(750,visible.width),Math.max(1334,visible.height)); this.node.addChild(this.root);this.showLoading(); const errors = ConfigValidator.validate(); if (errors.length)
+    override start() { view.setDesignResolutionSize(750, 1334, ResolutionPolicy.FIXED_WIDTH);if(typeof document!=='undefined'){const doc:any=document;if(doc.documentElement?.style)doc.documentElement.style.touchAction='none';if(doc.body?.style){doc.body.style.touchAction='none';doc.body.style.overscrollBehavior='none';}const canvas=doc.querySelector?.('canvas');if(canvas?.style)canvas.style.touchAction='none';}input.on(Input.EventType.TOUCH_START,this.onBoardTouchStart,this);input.on(Input.EventType.TOUCH_MOVE,this.onBoardTouchMove,this);input.on(Input.EventType.TOUCH_END,this.onBoardTouchEnd,this);input.on(Input.EventType.TOUCH_CANCEL,this.onBoardTouchEnd,this); AudioService.initialize(this.node);PlatformService.initializeSharing();this.root = new Node('AppRoot');const visible=view.getVisibleSize();this.root.addComponent(UITransform).setContentSize(Math.max(750,visible.width),Math.max(1334,visible.height)); this.node.addChild(this.root);this.showLoading(); const errors = ConfigValidator.validate(); if (errors.length)
         console.error(errors.join('\n'));this.loadArtAssets(progress=>this.updateLoading(progress)).then(() => {this.updateLoading(1);this.scheduleOnce(()=>{AudioService.ensureMusic();this.showHome();},.06);}); }
     override onDestroy(){this.cancelActiveDrag();input.off(Input.EventType.TOUCH_START,this.onBoardTouchStart,this);input.off(Input.EventType.TOUCH_MOVE,this.onBoardTouchMove,this);input.off(Input.EventType.TOUCH_END,this.onBoardTouchEnd,this);input.off(Input.EventType.TOUCH_CANCEL,this.onBoardTouchEnd,this);this.unscheduleAllCallbacks();}
     private async loadArtAssets(onProgress:(progress:number)=>void,only?:Set<string>) { const entries: {
         key: string;
         path: string;
-    }[] = [...Object.keys(FLOWER_BY_ID).map(key => ({ key, path: `art/flowers/${key}/texture` })), ...Array.from({ length: 6 }, (_, i) => ({ key: `vase_${i + 1}`, path: `art/vases/modern_vase_${i + 1}/texture` })), ...Array.from({ length: 6 }, (_, i) => ({ key: `vase_front_${i + 1}`, path: `art/vases/modern_vase_front_${i + 1}/texture` })), ...Array.from({ length: 6 }, (_, i) => ({ key: `vase_inner_${i + 1}`, path: `art/vases/vase_inner_${i + 1}/texture` })), ...Array.from({ length: 6 }, (_, i) => ({ key: `vase_opaque_${i + 1}`, path: `art/vases/vase_opaque_${i + 1}/texture` })), ...['button_primary','panel_popup','prop_time','prop_magic','prop_shuffle','lock_count','lock_video','button_circle','ui_back','ui_pause','ui_settings','star_filled','tutorial_finger',...BUTTON_KEYS].map(key=>({key,path:`art/ui/${key}/texture`})), { key: 'conservatory', path: 'art/backgrounds/conservatory_clean/texture' }],selected=entries.filter(entry=>!this.sprites.has(entry.key)&&(!only||only.has(entry.key)));if(!selected.length){onProgress(1);return;}let loaded=0; await Promise.all(selected.map(entry => new Promise<void>(resolve => { resources.load(entry.path, Texture2D, (error, texture) => { if (error || !texture)
+    }[] = [...Object.keys(FLOWER_BY_ID).map(key => ({ key, path: `art/flowers/${key}/texture` })), ...Array.from({ length: 6 }, (_, i) => ({ key: `vase_${i + 1}`, path: `art/vases/modern_vase_${i + 1}/texture` })), ...Array.from({ length: 6 }, (_, i) => ({ key: `vase_front_${i + 1}`, path: `art/vases/modern_vase_front_${i + 1}/texture` })), ...Array.from({ length: 6 }, (_, i) => ({ key: `vase_inner_${i + 1}`, path: `art/vases/vase_inner_${i + 1}/texture` })), ...Array.from({ length: 6 }, (_, i) => ({ key: `vase_opaque_${i + 1}`, path: `art/vases/vase_opaque_${i + 1}/texture` })), ...['button_primary','panel_popup','prop_time','prop_magic','prop_shuffle','lock_count','lock_video','button_circle','ui_back','ui_pause','ui_settings','star_filled','tutorial_finger','home_checkin','home_share_friend','home_share_timeline',...BUTTON_KEYS].map(key=>({key,path:`art/ui/${key}/texture`})), { key: 'conservatory', path: 'art/backgrounds/conservatory_clean/texture' }],selected=entries.filter(entry=>!this.sprites.has(entry.key)&&(!only||only.has(entry.key)));if(!selected.length){onProgress(1);return;}let loaded=0; await Promise.all(selected.map(entry => new Promise<void>(resolve => { resources.load(entry.path, Texture2D, (error, texture) => { if (error || !texture)
         console.error(`美术纹理加载失败：${entry.path}`, error);
     else {
         texture.setFilters(Texture2D.Filter.LINEAR,Texture2D.Filter.LINEAR);
@@ -80,7 +80,12 @@ export class FlowerGameApp extends Component {
     private artPanel(p:Node,name:string,x:number,y:number,w:number,h:number){const n=this.art(p,'panel_popup',x,y,Math.round(w*1.08),Math.round(h*1.08));n.name=name;return n;}
     private button(p: Node, s: string, x: number, y: number, w: number, h: number, fn: () => void, enabled = true, color = C.sage) {const scale=1.08,drawW=Math.round(w*scale),circle=w===h,key=circle?'button_circle':'button_primary',drawH=circle?Math.round(h*scale):Math.round(drawW/3.95),n=circle?this.art(p,key,x,y,drawW,drawH):this.artStretch(p,key,x,y,drawW,drawH);n.name='Button_'+s;n.getComponent(Sprite)!.color=enabled?Color.WHITE:new Color('#9E9D95');n.addComponent(Button).interactable=enabled;this.text(n,s,0,0,22,enabled?C.ink:new Color('#747A76'),drawW-72);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();fn();},this);return n; }
     private videoButton(p:Node,s:string,x:number,y:number,w:number,h:number,fn:()=>void){const drawW=Math.round(w*1.08),drawH=Math.round(drawW/3.95),n=this.artStretch(p,'button_primary',x,y,drawW,drawH);n.name='Button_'+s;n.addComponent(Button);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();this.logVideoClick(s);fn();},this);this.art(n,'lock_video',-drawW*.31,0,44,44);this.text(n,s,drawW*.055,0,23,C.ink,drawW*.62);return n;}
-    private logVideoClick(action:string,extra:Record<string,unknown>={}){console.log('[激励视频占位] 点击视频入口',{action,...extra});}
+    private logVideoClick(action:string,extra:Record<string,unknown>={}){
+        console.log('[激励视频占位] 点击视频入口',{action,...extra});
+        game.resume();
+        AudioService.syncSettings();
+        AudioService.ensureMusic();
+    }
     private artButton(p:Node,key:string,x:number,y:number,size:number,fn:()=>void){const drawSize=Math.round(size*1.12),n=this.art(p,key,x,y,drawSize,drawSize);n.addComponent(Button);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();fn();},this);return n;}
     private art(p: Node, key: string, x: number, y: number, maxW: number, maxH: number) { const sf = this.sprites.get(key), n = new Node('Art_' + key); n.setPosition(x, y); const t = n.addComponent(UITransform); let w = maxW, h = maxH; if (sf) {
         const sz = sf.originalSize, scale = Math.min(maxW / sz.width, maxH / sz.height);
@@ -88,8 +93,63 @@ export class FlowerGameApp extends Component {
         h = Math.round(sz.height * scale);
     } t.setContentSize(w, h); const s = n.addComponent(Sprite); s.sizeMode = Sprite.SizeMode.CUSTOM; s.spriteFrame = sf || null; p.addChild(n); return n; }
     private background() { const visible=view.getVisibleSize(),w=Math.max(750,visible.width),h=Math.max(1334,visible.height),n=this.artCover(this.root,'conservatory',0,0,w,h); n.setSiblingIndex(0); const tone=this.panel(this.root,'BackgroundTone',0,0,w,h,new Color(57,82,67,48),0);tone.setSiblingIndex(1); }
-    private showHome() { this.clear(); this.background();this.artButton(this.root,'ui_settings',-280,545,72,()=>this.showSettings());const display=new Node('HomeVase');display.setPosition(0,101);display.setScale(1.3,1.3,1);display.addComponent(UITransform).setContentSize(218,300);this.root.addChild(display);const inner=this.art(display,'vase_inner_2',0,-62,145,165);inner.setSiblingIndex(0);const left=this.art(display,'rose',this.flowerSlotX('rose',0)+this.flowerCenterCorrection('rose'),30,115,225);left.setRotationFromEuler(0,0,this.flowerSlotRotation('rose',0));const middle=this.art(display,'tulip',this.flowerCenterCorrection('tulip'),44,115,225);const right=this.art(display,'daisy',this.flowerSlotX('daisy',2)+this.flowerCenterCorrection('daisy'),30,115,225);right.setRotationFromEuler(0,0,this.flowerSlotRotation('daisy',2));left.setSiblingIndex(4);middle.setSiblingIndex(6);right.setSiblingIndex(5);const body=this.art(display,'vase_opaque_2',0,-62,145,165);body.setSiblingIndex(45);const front=this.art(display,'vase_front_2',0,-62,145,165);front.setSiblingIndex(50);const startButton=this.button(this.root, '开始整理', 0, -285, 340, 76, () => {AudioService.ensureMusic();this.showLevels();}, true, C.rose),startLabel=startButton.getChildByName('Text')?.getComponent(Label);if(startLabel){startLabel.fontSize=31;startLabel.lineHeight=38;} const save = SaveService.load(); this.text(this.root, `已收集 ${SaveService.totalStars(save)} 颗星`, 0, -355, 25, C.ink); }
-    private showLevels(page=this.levelPage) { this.levelPage=Math.max(0,Math.min(1,page));this.clear(); this.background(); this.fullPanel(this.root,'Veil',new Color(248,244,232,225)); this.text(this.root, '花语之旅', 0, 585, 42, C.ink); this.artButton(this.root,'ui_back',-310,585,64,()=>this.showHome()); const s=SaveService.load(),total=SaveService.totalStars(s);this.text(this.root,`已收集 ${total} 颗星`,0,535,21,C.sage);for(let i=0;i<30;i++){
+    private showHome(checkToday=true) { this.clear(); this.background();this.artButton(this.root,'ui_settings',-280,545,72,()=>this.showSettings());const display=new Node('HomeVase');display.setPosition(0,145);display.setScale(1.23,1.23,1);display.addComponent(UITransform).setContentSize(218,300);this.root.addChild(display);const inner=this.art(display,'vase_inner_2',0,-62,145,165);inner.setSiblingIndex(0);const left=this.art(display,'rose',this.flowerSlotX('rose',0)+this.flowerCenterCorrection('rose'),30,115,225);left.setRotationFromEuler(0,0,this.flowerSlotRotation('rose',0));const middle=this.art(display,'tulip',this.flowerCenterCorrection('tulip'),44,115,225);const right=this.art(display,'daisy',this.flowerSlotX('daisy',2)+this.flowerCenterCorrection('daisy'),30,115,225);right.setRotationFromEuler(0,0,this.flowerSlotRotation('daisy',2));left.setSiblingIndex(4);middle.setSiblingIndex(6);right.setSiblingIndex(5);const body=this.art(display,'vase_opaque_2',0,-62,145,165);body.setSiblingIndex(45);const front=this.art(display,'vase_front_2',0,-62,145,165);front.setSiblingIndex(50);const startButton=this.button(this.root, '开始整理', 0, -235, 340, 76, () => {AudioService.ensureMusic();this.showLevels();}, true, C.rose),startLabel=startButton.getChildByName('Text')?.getComponent(Label);if(startLabel){startLabel.fontSize=31;startLabel.lineHeight=38;} const save = SaveService.load(); this.text(this.root, `已收集 ${SaveService.totalStars(save)} 颗星  ·  花币 ${save.coins}`, 0, -305, 23, C.ink);this.homeActionButton('home_checkin','签到',-220,-440,()=>this.showCheckIn());this.homeActionButton('home_share_friend','转发好友',0,-440,()=>this.shareFriend());this.homeActionButton('home_share_timeline','朋友圈',220,-440,()=>this.shareTimeline());if(checkToday&&SaveService.canCheckIn(save))this.scheduleOnce(()=>{if(!this.modal&&SaveService.canCheckIn())this.showCheckIn();},.08); }
+    private homeActionButton(icon:string,label:string,x:number,y:number,action:()=>void){const n=this.art(this.root,'button_circle',x,y,144,144);n.name='HomeAction_'+label;n.addComponent(Button);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();action();},this);this.art(n,icon,0,9,84,84);const tag=this.panel(n,'ActionLabel',0,-55,132,40,new Color(52,72,64,242),20);this.text(tag,label,0,0,18,C.white,122);return n;}
+    private showCheckIn(){
+        if(this.modal)return;
+        this.modal=true;
+        const overlay=this.modalPanel(this.root,'CheckIn',new Color(24,34,29,195)),card=this.artPanel(overlay,'Card',0,0,650,860);
+        this.text(card,'七日花礼',0,320,40,C.ink);
+        this.text(card,'每天来花园领取一份花币',0,265,20,C.sage);
+        let doubleReward=false,lastToggleAt=0,claiming=false;
+        const renderDays=()=>{
+            const old=card.getChildByName('CheckInDays');if(old)old.destroy();
+            const area=new Node('CheckInDays');area.name='CheckInDays';area.addComponent(UITransform).setContentSize(590,370);area.setPosition(0,35);card.addChild(area);
+            const save=SaveService.load(),claimed=save.checkIn.claimedDays,canClaim=SaveService.canCheckIn(save),next=claimed>=7?1:claimed+1;
+            DAILY_REWARDS.forEach((reward,index)=>{
+                const day=index+1,row=index<4?0:1,col=index<4?index:index-4,count=row===0?4:3,x=(col-(count-1)/2)*137,y=row===0?92:-80,isClaimed=claimed>=day&&!(claimed===7&&canClaim),isNext=canClaim&&day===next;
+                const tile=this.panel(area,`Day_${day}`,x,y,118,145,isNext?new Color(255,246,215,252):new Color(244,247,238,245),22),g=tile.getComponent(Graphics)!;
+                g.strokeColor=isNext?C.gold:C.sage;g.lineWidth=isNext?4:2;g.roundRect(-59,-72.5,118,145,22);g.stroke();
+                this.text(tile,`第${day}天`,0,42,17,C.ink,100);this.text(tile,`✦ ${reward}`,0,-4,22,isClaimed?new Color('#9AA29C'):C.gold,100);this.text(tile,isClaimed?'已领取':isNext?'可领取':'待解锁',0,-47,15,isNext?C.rose:C.sage,100);
+            });
+        };
+        const claimArea=new Node('CheckInClaimArea');claimArea.addComponent(UITransform).setContentSize(430,90);claimArea.setPosition(0,-250);card.addChild(claimArea);
+        const finishClaim=()=>{
+            if(claiming)return;claiming=true;
+            const multiplier=doubleReward?2:1;
+            if(doubleReward)this.logVideoClick('签到双倍奖励',{multiplier});
+            const result=SaveService.claimDailyReward(multiplier);
+            if(!result.ok){this.toast('今天已经签到啦');claiming=false;return;}
+            this.toast(`第 ${result.day} 天签到成功，获得 ${result.reward} 花币`);
+            renderDays();renderOption();renderClaim();
+        };
+        const renderClaim=()=>{
+            claimArea.removeAllChildren();
+            const canClaim=SaveService.canCheckIn();
+            if(!canClaim){this.button(claimArea,'今日已签到',0,0,310,72,()=>{},false);return;}
+            if(doubleReward)this.videoButton(claimArea,'看视频领双倍',0,0,340,76,finishClaim);
+            else this.button(claimArea,'签到',0,0,310,72,finishClaim,true,C.rose);
+        };
+        const optionArea=new Node('DoubleRewardOption');optionArea.addComponent(UITransform).setContentSize(430,58);optionArea.setPosition(0,-180);card.addChild(optionArea);const optionButton=optionArea.addComponent(Button);
+        const renderOption=()=>{
+            optionArea.removeAllChildren();
+            const enabled=SaveService.canCheckIn()&&!claiming,box=this.panel(optionArea,'Checkbox',-170,0,44,44,doubleReward?new Color(237,178,93,255):new Color(255,252,244,255),10),g=box.getComponent(Graphics)!;
+            g.strokeColor=doubleReward?C.gold:C.sage;g.lineWidth=3;g.roundRect(-22,-22,44,44,10);g.stroke();
+            if(doubleReward)this.text(box,'✓',0,1,25,C.white,38);
+            const rewardLabel=this.text(optionArea,'看视频，领取双倍奖励',40,0,20,enabled?C.ink:new Color('#949B96'),340);
+            rewardLabel.horizontalAlign=HorizontalTextAlignment.LEFT;
+            optionButton.interactable=enabled;
+        };
+        optionArea.on(Button.EventType.CLICK,()=>{
+            const now=Date.now();if(claiming||now-lastToggleAt<500)return;
+            lastToggleAt=now;doubleReward=!doubleReward;AudioService.playButton();renderOption();renderClaim();
+        },this);
+        renderDays();renderOption();renderClaim();
+        this.button(card,'关闭',0,-355,310,72,()=>{overlay.destroy();this.modal=false;this.showHome(false);});
+    }
+    private shareFriend(){if(PlatformService.shareToFriend())this.toast('已打开好友转发');else this.toast('请在微信小游戏中转发给好友');}
+    private shareTimeline(){if(PlatformService.openTimelineShare())this.toast('请点击右上角 ··· 分享到朋友圈');else this.toast('请在微信小游戏中分享到朋友圈');}
+    private showLevels(page=this.levelPage) { this.levelPage=Math.max(0,Math.min(1,page));this.clear(); this.background(); this.fullPanel(this.root,'Veil',new Color(248,244,232,225)); this.text(this.root, '花语之旅', 0, 585, 42, C.ink); this.artButton(this.root,'ui_back',-310,585,64,()=>this.showHome(false)); const s=SaveService.load(),total=SaveService.totalStars(s);this.text(this.root,`已收集 ${total} 颗星`,0,535,21,C.sage);for(let i=0;i<30;i++){
         const id=this.levelPage*30+i+1,col=i%5,row=Math.floor(i/5),x=-260+col*130,y=405-row*158,required=SaveService.requiredStars(id),videoOpen=!!s.videoUnlockedLevels[String(id)],available=id===1||total>=required||videoOpen,n=this.art(this.root,'button_circle',x,y,116,116);
         n.name='Level_'+id;n.getComponent(Sprite)!.color=available?Color.WHITE:new Color('#A9AAA2');n.addComponent(Button);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();available?this.startLevel(id):this.showLevelGate(id,required);},this);this.text(n,String(id),0,6,29,available?C.ink:new Color('#777D78'),70);
         const stars=s.levelStars[String(id)]||0;for(let star=0;star<3;star++){const icon=this.art(n,'star_filled',-28+star*28,-35,25,25);icon.getComponent(Sprite)!.color=star<stars?Color.WHITE:new Color(105,112,106,105);}

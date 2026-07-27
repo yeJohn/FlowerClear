@@ -3,6 +3,9 @@ const{LEVELS}=require('../.test-build/assets/scripts/config/GameData.js');
 const{ArrangementModel}=require('../.test-build/assets/scripts/domain/ArrangementModel.js');
 const{SaveService}=require('../.test-build/assets/scripts/services/SaveService.js');
 const{createVasePositions,flowerVisualSlot}=require('../.test-build/assets/scripts/board/BoardLayout.js');
+let localSave=null;global.localStorage={getItem:()=>localSave,setItem:(_key,value)=>{localSave=value;}};
+const firstCheckIn=SaveService.claimDailyReward(2);assert.equal(firstCheckIn.ok,true);assert.equal(firstCheckIn.day,1);assert.equal(firstCheckIn.reward,40);assert.equal(SaveService.load().coins,40);
+const duplicateCheckIn=SaveService.claimDailyReward(2);assert.equal(duplicateCheckIn.ok,false);assert.equal(SaveService.load().coins,40,'daily reward must only be claimable once per local calendar day');
 assert.equal(LEVELS.length,60);
 for(let count=3;count<=9;count++){const positions=createVasePositions(count);assert.equal(positions.length,count);assert.equal(new Set(positions.map(point=>`${point.x},${point.y}`)).size,count,`${count} vase positions must be unique`);}
 for(const count of[7,8,9]){const positions=createVasePositions(count);assert.ok(new Set(positions.map(point=>point.x)).size<=3,`${count} vases must use at most three columns`);assert.equal(new Set(positions.map(point=>point.y)).size,3,`${count} vases must use three rows`);}

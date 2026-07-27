@@ -8,4 +8,5 @@ export interface TransferSnapshot{vases:VaseStack[];remainingTime:number;score:n
 export interface TransferState extends TransferSnapshot{levelId:number;status:GameStatus;moves:number;lastEliminateAt:number;}
 export interface MoveResult{accepted:boolean;eliminated:string[];won:boolean;message?:string;}
 export interface LevelResult{stars:1|2|3;score:number;remainingTime:number;coins:number;}
-export interface PlayerSave{version:3;unlockedLevel:number;levelStars:Record<string,number>;bestScores:Record<string,number>;coins:number;videoUnlockedLevels:Record<string,boolean>;props:Record<PropType,number>;music:boolean;sfx:boolean;vibration:boolean;tutorialStep:number;}
+export interface DailyCheckIn{claimedDays:number;lastClaimDate:string;}
+export interface PlayerSave{version:4;unlockedLevel:number;levelStars:Record<string,number>;bestScores:Record<string,number>;coins:number;videoUnlockedLevels:Record<string,boolean>;props:Record<PropType,number>;music:boolean;sfx:boolean;vibration:boolean;tutorialStep:number;checkIn:DailyCheckIn;}
