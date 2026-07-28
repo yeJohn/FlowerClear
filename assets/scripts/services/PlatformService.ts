@@ -1,3 +1,5 @@
+import { ImageAsset, resources } from 'cc';
+
 declare const wx: undefined | {
   vibrateShort?: (options?: object) => void;
   showShareMenu?: (options?: {withShareTicket?:boolean;menus?:Array<'shareAppMessage'|'shareTimeline'>;success?:()=>void;fail?:(error:unknown)=>void}) => void;
@@ -7,21 +9,30 @@ declare const wx: undefined | {
 };
 
 type SharePayload={title:string;query?:string;imageUrl?:string;};
-const SHARE_TITLE='秘境花瓶：把花朵送回最合适的花瓶';
+const SHARE_TITLE='把花朵移到最合适的花瓶中';
 
 export class PlatformService {
+  private static shareImageUrl='';
+  private static payload(query:string):SharePayload{
+    return{title:SHARE_TITLE,query,...(this.shareImageUrl?{imageUrl:this.shareImageUrl}:{})};
+  }
   static isWechat() { return typeof wx !== 'undefined'; }
   static vibrate() { if (this.isWechat()) wx?.vibrateShort?.({ type: 'light' }); }
   static initializeSharing(){
     if(!this.isWechat())return;
-    const payload=()=>({title:SHARE_TITLE,query:'from=share'});
+    resources.load('art/ui/share_friend_cover',ImageAsset,(error,image)=>{
+      const imageUrl=image?.nativeUrl;
+      if(!error&&imageUrl)this.shareImageUrl=imageUrl;
+      else console.error('分享封面加载失败',error);
+    });
+    const payload=()=>this.payload('from=share');
     wx?.showShareMenu?.({withShareTicket:true,menus:['shareAppMessage','shareTimeline']});
     wx?.onShareAppMessage?.(payload);
-    wx?.onShareTimeline?.(()=>({title:SHARE_TITLE,query:'from=timeline'}));
+    wx?.onShareTimeline?.(()=>this.payload('from=timeline'));
   }
   static shareToFriend(){
     if(!this.isWechat())return false;
-    wx?.shareAppMessage?.({title:SHARE_TITLE,query:'from=friend'});
+    wx?.shareAppMessage?.(this.payload('from=friend'));
     return true;
   }
   static openTimelineShare(){

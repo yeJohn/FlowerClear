@@ -11,7 +11,7 @@ export class ArrangementModel {
     readonly state: TransferState;
     readonly props: Record<PropType, number>;
     private history: TransferSnapshot[] = [];
-    constructor(readonly level: TransferLevel) { this.props = { ...level.props }; this.state = { levelId: level.id, vases: this.buildVases(), remainingTime: level.timeLimit, score: 0, eliminatedGroups: 0, combo: 0, status: 'playing', moves: 0, lastEliminateAt: -99 }; }
+    constructor(readonly level: TransferLevel,inventory:Record<PropType,number>=level.props) { this.props = { ...inventory }; this.state = { levelId: level.id, vases: this.buildVases(), remainingTime: level.timeLimit, score: 0, eliminatedGroups: 0, combo: 0, status: 'playing', moves: 0, lastEliminateAt: -99 }; }
     tick(dt: number) { if (this.state.status !== 'playing')
         return; this.state.remainingTime = Math.max(0, this.state.remainingTime - dt); if (!this.state.remainingTime)
         this.state.status = 'failed'; }
