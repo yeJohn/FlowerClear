@@ -27,6 +27,7 @@ export class FlowerGameApp extends Component {
     private vaseVisualSlots = new Map<string, number[]>();
     private timeLabel: Label | null = null;
     private progressLabel: Label | null = null;
+    private homeCoinLabel: Label | null = null;
     private propArea: Node | null = null;
     private hint: {
         sourceId: string;
@@ -70,7 +71,7 @@ export class FlowerGameApp extends Component {
         this.showFail(); }
     private showLoading(){this.root.removeAllChildren();const visible=view.getVisibleSize(),bg=this.panel(this.root,'LoadingBackground',0,0,Math.max(750,visible.width),Math.max(1334,visible.height),new Color('#F6F1E5'),0);this.text(bg,'花香正在抵达…',0,-215,23,C.sage);this.panel(bg,'LoadingTrack',0,-270,480,28,new Color(219,224,208,255),14);const fill=new Node('LoadingFill');fill.setPosition(-230,-270);fill.addComponent(UITransform).setContentSize(460,22);this.loadingBar=fill.addComponent(Graphics);bg.addChild(fill);this.loadingLabel=this.text(bg,'0%',0,-320,20,C.ink,180);this.updateLoading(0);}
     private updateLoading(progress:number){const p=Math.max(0,Math.min(1,progress));if(this.loadingLabel)this.loadingLabel.string=`${Math.round(p*100)}%`;if(this.loadingBar){this.loadingBar.clear();this.loadingBar.fillColor=C.sage;this.loadingBar.roundRect(0,-11,460*p,22,11);this.loadingBar.fill();}}
-    private clear() { this.unscheduleAllCallbacks();this.cancelActiveDrag();this.selectedFlower=null;this.dragSources.length=0;this.deadlockCheckToken++;this.draggingFlower=false;this.timerStarted=false;this.lastHudSecond=-1;this.lastHudRemaining=-1;this.root.removeAllChildren(); this.model = null; this.vaseArea = null; this.propArea = null; this.vaseTargets.clear();this.vaseVisualSlots.clear(); this.timeLabel = null; this.progressLabel = null;this.loadingLabel=null;this.loadingBar=null;this.tutorialStep=-1; this.hint = null; this.modal = false; }
+    private clear() { this.unscheduleAllCallbacks();this.cancelActiveDrag();this.selectedFlower=null;this.dragSources.length=0;this.deadlockCheckToken++;this.draggingFlower=false;this.timerStarted=false;this.lastHudSecond=-1;this.lastHudRemaining=-1;this.root.removeAllChildren(); this.model = null; this.vaseArea = null; this.propArea = null; this.vaseTargets.clear();this.vaseVisualSlots.clear(); this.timeLabel = null; this.progressLabel = null;this.homeCoinLabel=null;this.loadingLabel=null;this.loadingBar=null;this.tutorialStep=-1; this.hint = null; this.modal = false; }
     private panel(p: Node, name: string, x: number, y: number, w: number, h: number, color: Color, r = 20) { const n = new Node(name); n.setPosition(x, y); n.addComponent(UITransform).setContentSize(w, h); const g = n.addComponent(Graphics); g.fillColor = color; g.roundRect(-w / 2, -h / 2, w, h, r); g.fill(); p.addChild(n); return n; }
     private fullPanel(p:Node,name:string,color:Color){const visible=view.getVisibleSize();return this.panel(p,name,0,0,Math.max(750,visible.width),Math.max(1334,visible.height),color,0);}
     private modalPanel(p:Node,name:string,color:Color){const n=this.fullPanel(p,name,color);n.addComponent(BlockInputEvents);return n;}
@@ -79,23 +80,33 @@ export class FlowerGameApp extends Component {
     private artStretch(p:Node,key:string,x:number,y:number,w:number,h:number){const n=new Node('Art_'+key);n.setPosition(x,y);n.addComponent(UITransform).setContentSize(w,h);const s=n.addComponent(Sprite);s.sizeMode=Sprite.SizeMode.CUSTOM;s.spriteFrame=this.sprites.get(key)||null;p.addChild(n);return n;}
     private artCover(p:Node,key:string,x:number,y:number,w:number,h:number){const sf=this.sprites.get(key),n=new Node('Art_'+key);n.setPosition(x,y);let drawW=w,drawH=h;if(sf){const size=sf.originalSize,scale=Math.max(w/size.width,h/size.height);drawW=Math.ceil(size.width*scale);drawH=Math.ceil(size.height*scale);}n.addComponent(UITransform).setContentSize(drawW,drawH);const s=n.addComponent(Sprite);s.sizeMode=Sprite.SizeMode.CUSTOM;s.spriteFrame=sf||null;p.addChild(n);return n;}
     private artPanel(p:Node,name:string,x:number,y:number,w:number,h:number){const n=this.art(p,'panel_popup',x,y,Math.round(w*1.08),Math.round(h*1.08));n.name=name;return n;}
-    private button(p: Node, s: string, x: number, y: number, w: number, h: number, fn: () => void, enabled = true, color = C.sage) {const scale=1.08,drawW=Math.round(w*scale),circle=w===h,key=circle?'button_circle':'button_primary',drawH=circle?Math.round(h*scale):Math.round(drawW/3.95),n=circle?this.art(p,key,x,y,drawW,drawH):this.artStretch(p,key,x,y,drawW,drawH);n.name='Button_'+s;n.getComponent(Sprite)!.color=enabled?Color.WHITE:new Color('#9E9D95');n.addComponent(Button).interactable=enabled;this.text(n,s,0,0,22,enabled?C.ink:new Color('#747A76'),drawW-72);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();fn();},this);return n; }
-    private videoButton(p:Node,s:string,x:number,y:number,w:number,h:number,fn:()=>void){const drawW=Math.round(w*1.08),drawH=Math.round(drawW/3.95),n=this.artStretch(p,'button_primary',x,y,drawW,drawH);n.name='Button_'+s;n.addComponent(Button);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();this.logVideoClick(s);fn();},this);this.art(n,'lock_video',-drawW*.3,0,40,40);this.text(n,s,drawW*.08,0,22,C.ink,drawW*.62);return n;}
-    private logVideoClick(action:string,extra:Record<string,unknown>={}){
-        console.log('[激励视频占位] 点击视频入口',{action,...extra});
+    private button(p: Node, s: string, x: number, y: number, w: number, h: number, fn: () => void, enabled = true, color = C.sage) {const scale=1.08,drawW=Math.round(w*scale),circle=w===h,key=circle?'button_circle':'button_primary',drawH=circle?Math.round(h*scale):Math.round(drawW/3.95),n=circle?this.art(p,key,x,y,drawW,drawH):this.artStretch(p,key,x,y,drawW,drawH);n.name='Button_'+s;n.getComponent(Sprite)!.color=enabled?Color.WHITE:new Color('#9E9D95');n.addComponent(Button).interactable=enabled;this.text(n,s,0,0,22,enabled?C.ink:new Color('#747A76'),drawW-72);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();this.runNormalClick(s,fn);},this);return n; }
+    private videoButton(p:Node,s:string,x:number,y:number,w:number,h:number,fn:()=>void){const drawW=Math.round(w*1.08),drawH=Math.round(drawW/3.95),n=this.artStretch(p,'button_primary',x,y,drawW,drawH);n.name='Button_'+s;n.addComponent(Button);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();this.requestVideoReward(s,fn);},this);this.art(n,'lock_video',-drawW*.3,0,40,40);this.text(n,s,drawW*.08,0,22,C.ink,drawW*.62);return n;}
+    private runNormalClick(action:string,callback:()=>void,extra:Record<string,unknown>={}){
+        console.log('[无需视频] 点击事件',{action,...extra});
+        callback();
+    }
+    private requestVideoReward(action:string,rewardCallback:()=>void,extra:Record<string,unknown>={}){
+        console.log('[需要视频] 点击视频入口',{action,...extra});
+        // 后续接入激励视频时，只在视频完整播放成功后调用：
+        this.completeVideoReward(action,rewardCallback,extra);
+    }
+    private completeVideoReward(action:string,rewardCallback:()=>void,extra:Record<string,unknown>={}){
+        console.log('[视频奖励] 完整观看，发放奖励',{action,...extra});
         game.resume();
         AudioService.syncSettings();
         AudioService.ensureMusic();
+        rewardCallback();
     }
-    private artButton(p:Node,key:string,x:number,y:number,size:number,fn:()=>void){const drawSize=Math.round(size*1.12),n=this.art(p,key,x,y,drawSize,drawSize);n.addComponent(Button);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();fn();},this);return n;}
+    private artButton(p:Node,key:string,x:number,y:number,size:number,fn:()=>void){const drawSize=Math.round(size*1.12),n=this.art(p,key,x,y,drawSize,drawSize);n.addComponent(Button);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();this.runNormalClick(key,fn);},this);return n;}
     private art(p: Node, key: string, x: number, y: number, maxW: number, maxH: number) { const sf = this.sprites.get(key), n = new Node('Art_' + key); n.setPosition(x, y); const t = n.addComponent(UITransform); let w = maxW, h = maxH; if (sf) {
         const sz = sf.originalSize, scale = Math.min(maxW / sz.width, maxH / sz.height);
         w = Math.round(sz.width * scale);
         h = Math.round(sz.height * scale);
     } t.setContentSize(w, h); const s = n.addComponent(Sprite); s.sizeMode = Sprite.SizeMode.CUSTOM; s.spriteFrame = sf || null; p.addChild(n); return n; }
     private background() { const visible=view.getVisibleSize(),w=Math.max(750,visible.width),h=Math.max(1334,visible.height),n=this.artCover(this.root,'conservatory',0,0,w,h); n.setSiblingIndex(0); const tone=this.panel(this.root,'BackgroundTone',0,0,w,h,new Color(57,82,67,48),0);tone.setSiblingIndex(1); }
-    private showHome(checkToday=true) { this.clear(); this.background();const homeSave=SaveService.load(),showCoins=()=>this.showCoinReward(),coinButton=this.button(this.root,`✦ ${homeSave.coins}`,-245,545,205,58,showCoins,true,C.gold),coinLabel=coinButton.getChildByName('Text');if(coinLabel)coinLabel.setPosition(-22,0);const addArea=this.panel(coinButton,'CoinAdd',78,0,44,44,C.gold,22);this.text(addArea,'+',0,1,25,C.white,38);this.artButton(this.root,'ui_settings',280,545,72,()=>this.showSettings());const display=new Node('HomeVase');display.setPosition(0,145);display.setScale(1.23,1.23,1);display.addComponent(UITransform).setContentSize(218,300);this.root.addChild(display);const inner=this.art(display,'vase_inner_2',0,-62,145,165);inner.setSiblingIndex(0);const left=this.art(display,'rose',this.flowerSlotX('rose',0)+this.flowerCenterCorrection('rose'),30,115,225);left.setRotationFromEuler(0,0,this.flowerSlotRotation('rose',0));const middle=this.art(display,'tulip',this.flowerCenterCorrection('tulip'),44,115,225);const right=this.art(display,'daisy',this.flowerSlotX('daisy',2)+this.flowerCenterCorrection('daisy'),30,115,225);right.setRotationFromEuler(0,0,this.flowerSlotRotation('daisy',2));left.setSiblingIndex(4);middle.setSiblingIndex(6);right.setSiblingIndex(5);const body=this.art(display,'vase_opaque_2',0,-62,145,165);body.setSiblingIndex(45);const front=this.art(display,'vase_front_2',0,-62,145,165);front.setSiblingIndex(50);const startButton=this.button(this.root, '开始整理', 0, -235, 340, 76, () => {AudioService.ensureMusic();this.showLevels();}, true, C.rose),startLabel=startButton.getChildByName('Text')?.getComponent(Label);if(startLabel){startLabel.fontSize=31;startLabel.lineHeight=38;} const save = homeSave; this.text(this.root, `已收集 ${SaveService.totalStars(save)} 颗星`, 0, -305, 23, C.ink);this.homeActionButton('home_checkin','签到',-220,-440,()=>this.showCheckIn());this.homeActionButton('home_share_friend','转发好友',0,-440,()=>this.shareFriend());this.homeActionButton('prop_magic','商城',220,-440,()=>this.showStore());if(checkToday&&SaveService.canCheckIn(save))this.scheduleOnce(()=>{if(!this.modal&&SaveService.canCheckIn())this.showCheckIn();},.08); }
-    private homeActionButton(icon:string,label:string,x:number,y:number,action:()=>void){const n=this.art(this.root,'button_circle',x,y,144,144);n.name='HomeAction_'+label;n.addComponent(Button);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();action();},this);this.art(n,icon,0,9,84,84);const tag=this.panel(n,'ActionLabel',0,-55,132,40,new Color(52,72,64,242),20);this.text(tag,label,0,0,18,C.white,122);return n;}
+    private showHome(checkToday=true) { this.clear(); this.background();const homeSave=SaveService.load(),showCoins=()=>this.showCoinReward(),coinButton=this.button(this.root,`✦ ${homeSave.coins}`,-245,545,205,58,showCoins,true,C.gold),coinLabel=coinButton.getChildByName('Text');this.homeCoinLabel=coinLabel?.getComponent(Label)||null;if(coinLabel)coinLabel.setPosition(-22,0);const addArea=this.panel(coinButton,'CoinAdd',78,0,44,44,C.gold,22);this.text(addArea,'+',0,1,25,C.white,38);this.artButton(this.root,'ui_settings',280,545,72,()=>this.showSettings());const display=new Node('HomeVase');display.setPosition(0,145);display.setScale(1.23,1.23,1);display.addComponent(UITransform).setContentSize(218,300);this.root.addChild(display);const inner=this.art(display,'vase_inner_2',0,-62,145,165);inner.setSiblingIndex(0);const left=this.art(display,'rose',this.flowerSlotX('rose',0)+this.flowerCenterCorrection('rose'),30,115,225);left.setRotationFromEuler(0,0,this.flowerSlotRotation('rose',0));const middle=this.art(display,'tulip',this.flowerCenterCorrection('tulip'),44,115,225);const right=this.art(display,'daisy',this.flowerSlotX('daisy',2)+this.flowerCenterCorrection('daisy'),30,115,225);right.setRotationFromEuler(0,0,this.flowerSlotRotation('daisy',2));left.setSiblingIndex(4);middle.setSiblingIndex(6);right.setSiblingIndex(5);const body=this.art(display,'vase_opaque_2',0,-62,145,165);body.setSiblingIndex(45);const front=this.art(display,'vase_front_2',0,-62,145,165);front.setSiblingIndex(50);const startButton=this.button(this.root, '开始整理', 0, -235, 340, 76, () => {AudioService.ensureMusic();this.showLevels();}, true, C.rose),startLabel=startButton.getChildByName('Text')?.getComponent(Label);if(startLabel){startLabel.fontSize=31;startLabel.lineHeight=38;} const save = homeSave; this.text(this.root, `已收集 ${SaveService.totalStars(save)} 颗星`, 0, -305, 23, C.ink);this.homeActionButton('home_checkin','签到',-220,-440,()=>this.showCheckIn());this.homeActionButton('home_share_friend','转发好友',0,-440,()=>this.shareFriend());this.homeActionButton('prop_magic','商城',220,-440,()=>this.showStore());if(checkToday&&SaveService.canCheckIn(save))this.scheduleOnce(()=>{if(!this.modal&&SaveService.canCheckIn())this.showCheckIn();},.08); }
+    private homeActionButton(icon:string,label:string,x:number,y:number,action:()=>void){const n=this.art(this.root,'button_circle',x,y,144,144);n.name='HomeAction_'+label;n.addComponent(Button);n.on(Button.EventType.CLICK,()=>{AudioService.playButton();this.runNormalClick(label,action);},this);this.art(n,icon,0,9,84,84);const tag=this.panel(n,'ActionLabel',0,-55,132,40,new Color(52,72,64,242),20);this.text(tag,label,0,0,18,C.white,122);return n;}
     private showCheckIn(){
         if(this.modal)return;
         this.modal=true;
@@ -118,7 +129,6 @@ export class FlowerGameApp extends Component {
         const finishClaim=()=>{
             if(claiming)return;claiming=true;
             const multiplier=doubleReward?2:1;
-            if(doubleReward)this.logVideoClick('签到双倍奖励',{multiplier});
             const result=SaveService.claimDailyReward(multiplier);
             if(!result.ok){this.toast('今天已经签到啦');claiming=false;return;}
             this.toast(`第 ${result.day} 天签到成功，获得 ${result.reward} 花币`);
@@ -158,9 +168,13 @@ export class FlowerGameApp extends Component {
         this.videoButton(card,'看视频得 20 花币',0,-90,390,72,()=>{
             const save=SaveService.addCoins(20);
             balance.string=`当前花币  ✦ ${save.coins}`;
+            this.refreshHomeCoinLabel(save.coins);
             this.toast('获得 20 花币');
         });
         this.button(card,'关闭',0,-220,310,72,()=>{overlay.destroy();this.modal=false;this.showHome(false);});
+    }
+    private refreshHomeCoinLabel(coins=SaveService.load().coins){
+        if(this.homeCoinLabel?.isValid)this.homeCoinLabel.string=`✦ ${coins}`;
     }
     private showStore(){
         if(this.modal)return;
@@ -389,8 +403,8 @@ export class FlowerGameApp extends Component {
         this.selectedFlower=null;
         this.transfer(selected.sourceId,selected.slotIndex,targetId);
     }
-    private unlockVase(id:string){if(!this.model)return;this.logVideoClick('花瓶解锁',{vaseId:id,levelId:this.model.level.id});if(this.model.unlockByVideo(id)){this.toast('新花瓶已解锁');this.render();if(this.model.state.status==='won')this.scheduleOnce(()=>this.win(),.3);}}
-    private audioSettingRow(parent:Node,title:string,y:number,kind:'music'|'sfx'){this.text(parent,title,-85,y,26,C.ink,230);const state=SaveService.load(),enabled=state[kind],toggle=this.art(parent,'button_circle',145,y,92,92);toggle.name=`Toggle_${kind}`;toggle.getComponent(Sprite)!.color=enabled?Color.WHITE:new Color('#A7AAA2');toggle.addComponent(Button);const label=this.text(toggle,enabled?'开':'关',0,1,23,enabled?C.ink:new Color('#737A75'),60);toggle.on(Button.EventType.CLICK,()=>{AudioService.playButton();const next=!SaveService.load()[kind];SaveService.setAudio(kind,next);AudioService.syncSettings();if(kind==='sfx'&&next)AudioService.playButton();toggle.getComponent(Sprite)!.color=next?Color.WHITE:new Color('#A7AAA2');label.string=next?'开':'关';label.color=next?C.ink:new Color('#737A75');},this);}
+    private unlockVase(id:string){if(!this.model)return;const levelId=this.model.level.id;this.requestVideoReward('花瓶解锁',()=>{if(this.model?.unlockByVideo(id)){this.toast('新花瓶已解锁');this.render();if(this.model.state.status==='won')this.scheduleOnce(()=>this.win(),.3);}},{vaseId:id,levelId});}
+    private audioSettingRow(parent:Node,title:string,y:number,kind:'music'|'sfx'){this.text(parent,title,-85,y,26,C.ink,230);const state=SaveService.load(),enabled=state[kind],toggle=this.art(parent,'button_circle',145,y,92,92);toggle.name=`Toggle_${kind}`;toggle.getComponent(Sprite)!.color=enabled?Color.WHITE:new Color('#A7AAA2');toggle.addComponent(Button);const label=this.text(toggle,enabled?'开':'关',0,1,23,enabled?C.ink:new Color('#737A75'),60);toggle.on(Button.EventType.CLICK,()=>{AudioService.playButton();const next=!SaveService.load()[kind];SaveService.setAudio(kind,next);if(kind==='music')AudioService.applyMusicSetting(next);else{AudioService.syncSettings();if(next)AudioService.playButton();}toggle.getComponent(Sprite)!.color=next?Color.WHITE:new Color('#A7AAA2');label.string=next?'开':'关';label.color=next?C.ink:new Color('#737A75');},this);}
     private showSettings(){if(this.modal)return;this.modal=true;const overlay=this.modalPanel(this.root,'Settings',new Color(24,34,29,195)),card=this.artPanel(overlay,'Card',0,0,570,610);this.text(card,'设置',0,190,40,C.ink);this.audioSettingRow(card,'背景音乐',65,'music');this.audioSettingRow(card,'游戏音效',-25,'sfx');this.button(card,'关闭',0,-155,300,70,()=>{overlay.destroy();this.modal=false;});}
     private showLevelGate(id:number,required:number){this.modal=true;const s=this.modalPanel(this.root,'LevelGate',new Color(24,34,29,190)),c=this.artPanel(s,'Card',0,0,560,560);this.text(c,'关卡尚未解锁',0,195,36,C.ink);this.text(c,required>0?`需要累计 ${required} 颗星`:'先完成前一关',0,105,23,C.sage);this.videoButton(c,'观看视频解锁',0,-45,330,76,()=>{SaveService.unlockByVideo(id);this.startLevel(id);});this.button(c,'继续收集星星',0,-155,330,76,()=>{s.destroy();this.modal=false;});}
     private confirmExit(){if(!this.model||this.modal)return;this.model.state.status='paused';this.modal=true;const s=this.modalPanel(this.root,'ExitConfirm',new Color(24,34,29,195)),c=this.artPanel(s,'Card',0,0,560,520);this.text(c,'要离开本关吗？',0,175,36,C.ink);this.text(c,'当前整理进度不会保留',0,90,21,C.sage);this.button(c,'继续整理',0,-40,320,72,()=>{s.destroy();this.modal=false;this.model!.state.status='playing';},true,C.rose);this.button(c,'返回选关',0,-145,320,72,()=>this.showLevels());}
@@ -407,10 +421,11 @@ export class FlowerGameApp extends Component {
     private useInventoryProp(p:PropType,name=PROP[p][1]){
         if(!this.model||this.modal)return;
         if((this.model.props[p]||0)<=0){
-            this.logVideoClick(`道具：${name}`,{propType:p,levelId:this.model.level.id});
-            this.model.props[p]++;
+            const levelId=this.model.level.id;
+            this.requestVideoReward(`道具：${name}`,()=>{if(!this.model)return;this.model.props[p]++;this.useProp(p);},{propType:p,levelId});
+            return;
         }
-        this.useProp(p);
+        this.runNormalClick(`使用道具：${name}`,()=>this.useProp(p),{propType:p,levelId:this.model.level.id});
     }
     private nextLevelId(id:number){return id>=60?1:id+1;}
     private useProp(p: PropType) { if (!this.model)
